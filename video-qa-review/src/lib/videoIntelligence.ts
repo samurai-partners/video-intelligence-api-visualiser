@@ -1,6 +1,6 @@
 import { protos, VideoIntelligenceServiceClient } from "@google-cloud/video-intelligence";
 import { timeOffsetToSeconds } from "./utils";
-import type { Scene, DetectedText, SpeechWord, SceneLabel, ExplicitContentFrame } from "@/types/scene";
+import type { Scene, DetectedText, SpeechWord, SceneLabel, ExplicitContentFrame, TrackedObject, PersonDetection, FaceDetection, LogoRecognition, BoundingBox } from "@/types/scene";
 
 const Feature = protos.google.cloud.videointelligence.v1.Feature;
 
@@ -37,6 +37,39 @@ export interface VIRawResult {
     confidence: number;
     segments: Array<{ startSeconds: number; endSeconds: number }>;
   }>;
+  objectAnnotations: Array<{
+    description: string;
+    confidence: number;
+    startSeconds: number;
+    endSeconds: number;
+    frames: Array<{ timeSeconds: number; boundingBox: BoundingBox }>;
+  }>;
+  personDetections: Array<{
+    startSeconds: number;
+    endSeconds: number;
+    timestampedObjects: Array<{
+      timeSeconds: number;
+      boundingBox: BoundingBox;
+      landmarks: Array<{ name: string; x: number; y: number; confidence: number }>;
+    }>;
+  }>;
+  faceDetections: Array<{
+    startSeconds: number;
+    endSeconds: number;
+    confidence: number;
+    timestampedObjects: Array<{
+      timeSeconds: number;
+      boundingBox: BoundingBox;
+      attributes: Array<{ name: string; confidence: number }>;
+    }>;
+  }>;
+  logoRecognitions: Array<{
+    description: string;
+    confidence: number;
+    startSeconds: number;
+    endSeconds: number;
+    boundingBox: BoundingBox;
+  }>;
 }
 
 export async function analyzeVideo(videoBuffer: Buffer): Promise<VIRawResult> {
@@ -50,6 +83,10 @@ export async function analyzeVideo(videoBuffer: Buffer): Promise<VIRawResult> {
       Feature.SPEECH_TRANSCRIPTION,
       Feature.EXPLICIT_CONTENT_DETECTION,
       Feature.LABEL_DETECTION,
+      Feature.OBJECT_TRACKING,
+      Feature.PERSON_DETECTION,
+      Feature.FACE_DETECTION,
+      Feature.LOGO_RECOGNITION,
     ],
     videoContext: {
       speechTranscriptionConfig: {
@@ -119,7 +156,90 @@ export async function analyzeVideo(videoBuffer: Buffer): Promise<VIRawResult> {
     return { description, confidence, segments };
   });
 
-  return { shotChanges, textAnnotations, speechTranscriptions, explicitFrames, labels };
+  // Object tracking
+  const objectAnnotations = (annotationResults.objectAnnotations || []).map((oa) => {
+    const description = oa.entity?.description || "";
+    const confidence = oa.confidence || 0;
+    const startSeconds = timeOffsetToSeconds(oa.segment?.startTimeOffset);
+    const endSeconds = timeOffsetToSeconds(oa.segment?.endTimeOffset);
+    const frames = (oa.frames || []).map((f) => ({
+      timeSeconds: timeOffsetToSeconds(f.timeOffset),
+      boundingBox: {
+        top: f.normalizedBoundingBox?.top || 0,
+        left: f.normalizedBoundingBox?.left || 0,
+        right: f.normalizedBoundingBox?.right || 0,
+        bottom: f.normalizedBoundingBox?.bottom || 0,
+      },
+    }));
+    return { description, confidence, startSeconds, endSeconds, frames };
+  });
+
+  // Person detection
+  const personDetections = (annotationResults.personDetectionAnnotations || []).flatMap((pda) =>
+    (pda.tracks || []).map((track) => ({
+      startSeconds: timeOffsetToSeconds(track.segment?.startTimeOffset),
+      endSeconds: timeOffsetToSeconds(track.segment?.endTimeOffset),
+      timestampedObjects: (track.timestampedObjects || []).map((to) => ({
+        timeSeconds: timeOffsetToSeconds(to.timeOffset),
+        boundingBox: {
+          top: to.normalizedBoundingBox?.top || 0,
+          left: to.normalizedBoundingBox?.left || 0,
+          right: to.normalizedBoundingBox?.right || 0,
+          bottom: to.normalizedBoundingBox?.bottom || 0,
+        },
+        landmarks: (to.landmarks || []).map((lm) => ({
+          name: lm.name || "",
+          x: lm.point?.x || 0,
+          y: lm.point?.y || 0,
+          confidence: lm.confidence || 0,
+        })),
+      })),
+    }))
+  );
+
+  // Face detection
+  const faceDetections = (annotationResults.faceDetectionAnnotations || []).flatMap((fda) =>
+    (fda.tracks || []).map((track) => ({
+      startSeconds: timeOffsetToSeconds(track.segment?.startTimeOffset),
+      endSeconds: timeOffsetToSeconds(track.segment?.endTimeOffset),
+      confidence: track.confidence || 0,
+      timestampedObjects: (track.timestampedObjects || []).map((to) => ({
+        timeSeconds: timeOffsetToSeconds(to.timeOffset),
+        boundingBox: {
+          top: to.normalizedBoundingBox?.top || 0,
+          left: to.normalizedBoundingBox?.left || 0,
+          right: to.normalizedBoundingBox?.right || 0,
+          bottom: to.normalizedBoundingBox?.bottom || 0,
+        },
+        attributes: (to.attributes || []).map((attr) => ({
+          name: attr.name || "",
+          confidence: attr.confidence || 0,
+        })),
+      })),
+    }))
+  );
+
+  // Logo recognition
+  const logoRecognitions = (annotationResults.logoRecognitionAnnotations || []).flatMap((lra) => {
+    const description = lra.entity?.description || "";
+    return (lra.tracks || []).map((track) => {
+      const firstObj = track.timestampedObjects?.[0];
+      return {
+        description,
+        confidence: track.confidence || 0,
+        startSeconds: timeOffsetToSeconds(track.segment?.startTimeOffset),
+        endSeconds: timeOffsetToSeconds(track.segment?.endTimeOffset),
+        boundingBox: {
+          top: firstObj?.normalizedBoundingBox?.top || 0,
+          left: firstObj?.normalizedBoundingBox?.left || 0,
+          right: firstObj?.normalizedBoundingBox?.right || 0,
+          bottom: firstObj?.normalizedBoundingBox?.bottom || 0,
+        },
+      };
+    });
+  });
+
+  return { shotChanges, textAnnotations, speechTranscriptions, explicitFrames, labels, objectAnnotations, personDetections, faceDetections, logoRecognitions };
 }
 
 export function segmentIntoScenes(viResult: VIRawResult, videoDuration: number): Scene[] {
@@ -194,6 +314,55 @@ export function segmentIntoScenes(viResult: VIRawResult, videoDuration: number):
       }
     }
 
+    // Collect objects for this scene
+    const sceneObjects: TrackedObject[] = viResult.objectAnnotations
+      .filter((o) => o.startSeconds < end && o.endSeconds > start)
+      .map((o) => ({
+        description: o.description,
+        confidence: o.confidence,
+        startTimeSeconds: o.startSeconds,
+        endTimeSeconds: o.endSeconds,
+        frames: o.frames.filter((f) => f.timeSeconds >= start && f.timeSeconds < end),
+      }));
+
+    // Collect person detections for this scene
+    const scenePersons: PersonDetection[] = viResult.personDetections
+      .filter((p) => p.startSeconds < end && p.endSeconds > start)
+      .map((p) => {
+        const firstObj = p.timestampedObjects.find((to) => to.timeSeconds >= start && to.timeSeconds < end) || p.timestampedObjects[0];
+        return {
+          startTimeSeconds: p.startSeconds,
+          endTimeSeconds: p.endSeconds,
+          landmarks: firstObj?.landmarks || [],
+          boundingBox: firstObj?.boundingBox || { top: 0, left: 0, right: 0, bottom: 0 },
+        };
+      });
+
+    // Collect face detections for this scene
+    const sceneFaces: FaceDetection[] = viResult.faceDetections
+      .filter((f) => f.startSeconds < end && f.endSeconds > start)
+      .map((f) => {
+        const firstObj = f.timestampedObjects.find((to) => to.timeSeconds >= start && to.timeSeconds < end) || f.timestampedObjects[0];
+        return {
+          startTimeSeconds: f.startSeconds,
+          endTimeSeconds: f.endSeconds,
+          confidence: f.confidence,
+          attributes: firstObj?.attributes || [],
+          boundingBox: firstObj?.boundingBox || { top: 0, left: 0, right: 0, bottom: 0 },
+        };
+      });
+
+    // Collect logo recognitions for this scene
+    const sceneLogos: LogoRecognition[] = viResult.logoRecognitions
+      .filter((l) => l.startSeconds < end && l.endSeconds > start)
+      .map((l) => ({
+        description: l.description,
+        confidence: l.confidence,
+        startTimeSeconds: l.startSeconds,
+        endTimeSeconds: l.endSeconds,
+        boundingBox: l.boundingBox,
+      }));
+
     scenes.push({
       index: i,
       startTimeSeconds: start,
@@ -208,6 +377,10 @@ export function segmentIntoScenes(viResult: VIRawResult, videoDuration: number):
           maxLikelihood,
           frames: explicitFrames,
         },
+        objects: sceneObjects,
+        persons: scenePersons,
+        faces: sceneFaces,
+        logos: sceneLogos,
       },
     });
   }

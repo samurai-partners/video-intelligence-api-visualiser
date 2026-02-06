@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useCallback } from "react";
+import { useCallback } from "react";
 import { useProjectStore } from "@/stores/useProjectStore";
 
 export function useSceneNavigation() {
@@ -24,31 +24,6 @@ export function useSceneNavigation() {
   const goToNextScene = useCallback(() => {
     goToScene(currentSceneIndex + 1);
   }, [currentSceneIndex, goToScene]);
-
-  // Keyboard navigation
-  useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      // Skip if user is typing in an input
-      if (
-        e.target instanceof HTMLInputElement ||
-        e.target instanceof HTMLTextAreaElement ||
-        e.target instanceof HTMLSelectElement
-      ) {
-        return;
-      }
-
-      if (e.key === "ArrowLeft") {
-        e.preventDefault();
-        goToPrevScene();
-      } else if (e.key === "ArrowRight") {
-        e.preventDefault();
-        goToNextScene();
-      }
-    }
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [goToPrevScene, goToNextScene]);
 
   return {
     currentSceneIndex,

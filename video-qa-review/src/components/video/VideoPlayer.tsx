@@ -49,12 +49,12 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
     }, [handleTimeUpdate]);
 
     return (
-      <div className="relative w-full bg-black rounded-lg overflow-hidden">
+      <div className="relative w-full bg-black flex items-center justify-center" style={{ height: "35vh" }}>
         <video
           ref={videoRef}
           src={src}
           controls
-          className="w-full aspect-video"
+          className="max-w-full max-h-full"
         />
       </div>
     );

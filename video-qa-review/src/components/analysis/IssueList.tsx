@@ -19,42 +19,36 @@ export function IssueList({ onIssueClick }: IssueListProps) {
     issues.filter((i) => i.severity === severity).length;
 
   return (
-    <div className="space-y-3">
-      {/* Filters */}
-      <div className="space-y-1.5">
-        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">フィルター</p>
+    <div className="space-y-2">
+      {/* Filters - single row */}
+      <div className="flex items-center gap-2">
         {(["critical", "warning", "info"] as const).map((sev) => {
           const count = countBySeverity(sev);
-          const colors: Record<string, string> = {
-            critical: "text-red-600",
-            warning: "text-yellow-600",
-            info: "text-blue-600",
+          const active = filterSeverity.has(sev);
+          const styles: Record<string, string> = {
+            critical: active ? "bg-red-100 text-red-700 border-red-300" : "bg-gray-50 text-gray-400 border-gray-200",
+            warning: active ? "bg-yellow-100 text-yellow-700 border-yellow-300" : "bg-gray-50 text-gray-400 border-gray-200",
+            info: active ? "bg-blue-100 text-blue-700 border-blue-300" : "bg-gray-50 text-gray-400 border-gray-200",
           };
+          const labels: Record<string, string> = { critical: "重大", warning: "警告", info: "情報" };
           return (
-            <label key={sev} className="flex items-center gap-2 text-sm cursor-pointer">
-              <input
-                type="checkbox"
-                checked={filterSeverity.has(sev)}
-                onChange={() => toggleSeverityFilter(sev)}
-                className="rounded"
-              />
-              <span className={colors[sev]}>
-                {SEVERITY_LABELS[sev]} ({count})
-              </span>
-            </label>
+            <button
+              key={sev}
+              onClick={() => toggleSeverityFilter(sev)}
+              className={`px-2 py-0.5 rounded border text-[10px] font-medium transition-colors ${styles[sev]}`}
+            >
+              {labels[sev]} {count}
+            </button>
           );
         })}
       </div>
 
       {/* Issue list */}
       <div className="space-y-1.5">
-        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-          問題一覧 ({filteredIssues.length})
-        </p>
         {filteredIssues.length === 0 ? (
-          <p className="text-sm text-gray-400 py-4 text-center">問題なし</p>
+          <p className="text-xs text-gray-400 py-4 text-center">問題なし</p>
         ) : (
-          <div className="space-y-1.5 max-h-[400px] overflow-y-auto">
+          <div className="space-y-1.5">
             {filteredIssues.map((issue) => (
               <IssueCard
                 key={issue.id}

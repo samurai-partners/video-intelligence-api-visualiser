@@ -9,22 +9,22 @@ export function SceneNavigator() {
 
   if (totalScenes === 0) {
     return (
-      <div className="flex items-center justify-center gap-4 py-2 text-gray-400 text-sm">
+      <div className="flex items-center justify-center gap-3 py-1 text-gray-400 text-xs">
         シーンデータなし
       </div>
     );
   }
 
   return (
-    <div className="flex items-center justify-center gap-4 py-2">
+    <div className="flex items-center justify-center gap-3 py-1">
       <button
         onClick={goToPrevScene}
         disabled={!hasPrev}
-        className="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-30 disabled:cursor-not-allowed bg-gray-100 hover:bg-gray-200 text-gray-700"
+        className="px-2 py-1 rounded text-xs font-medium transition-colors disabled:opacity-30 disabled:cursor-not-allowed bg-gray-100 hover:bg-gray-200 text-gray-700"
       >
         ← 前へ
       </button>
-      <span className="text-sm text-gray-600 min-w-[120px] text-center">
+      <span className="text-xs text-gray-600 min-w-[100px] text-center">
         シーン {currentSceneIndex + 1} / {totalScenes}
         {currentScene && (
           <span className="text-gray-400 ml-1">
@@ -35,7 +35,7 @@ export function SceneNavigator() {
       <button
         onClick={goToNextScene}
         disabled={!hasNext}
-        className="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-30 disabled:cursor-not-allowed bg-gray-100 hover:bg-gray-200 text-gray-700"
+        className="px-2 py-1 rounded text-xs font-medium transition-colors disabled:opacity-30 disabled:cursor-not-allowed bg-gray-100 hover:bg-gray-200 text-gray-700"
       >
         次へ →
       </button>

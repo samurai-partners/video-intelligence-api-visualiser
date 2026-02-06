@@ -13,7 +13,7 @@ export default function NewProjectPage() {
   const draftConfig = useProjectStore((s) => s.draftConfig);
   const projectName = useProjectStore((s) => s.projectName);
 
-  const canStart = draftVideo && draftConfig.videoPurpose.trim().length > 0;
+  const canStart = !!draftVideo;
 
   const handleStart = () => {
     if (!canStart) return;
@@ -55,11 +55,6 @@ export default function NewProjectPage() {
           {!draftVideo && (
             <p className="text-sm text-gray-400 text-center mt-2">
               動画ファイルをアップロードしてください
-            </p>
-          )}
-          {draftVideo && !draftConfig.videoPurpose.trim() && (
-            <p className="text-sm text-gray-400 text-center mt-2">
-              動画の目的を入力してください
             </p>
           )}
         </div>

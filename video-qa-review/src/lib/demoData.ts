@@ -21,6 +21,7 @@ export const DEMO_SCENES: Scene[] = [
         { description: "title screen", confidence: 0.82 },
       ],
       explicitContent: { maxLikelihood: "VERY_UNLIKELY", frames: [] },
+      objects: [], persons: [], faces: [], logos: [],
     },
     geminiAnalysis: {
       summary: "オープニングタイトル画面。明るいアニメーションで動物園を紹介。",
@@ -49,6 +50,7 @@ export const DEMO_SCENES: Scene[] = [
         { description: "zoo", confidence: 0.85 },
       ],
       explicitContent: { maxLikelihood: "VERY_UNLIKELY", frames: [] },
+      objects: [], persons: [], faces: [], logos: [],
     },
     geminiAnalysis: {
       summary: "ライオンのコーナー。テロップに難しい漢字が含まれている。",
@@ -81,6 +83,7 @@ export const DEMO_SCENES: Scene[] = [
         { description: "animal", confidence: 0.98 },
       ],
       explicitContent: { maxLikelihood: "VERY_UNLIKELY", frames: [] },
+      objects: [], persons: [], faces: [], logos: [],
     },
     geminiAnalysis: {
       summary: "象のコーナー。適切な表現で問題なし。",
@@ -105,6 +108,7 @@ export const DEMO_SCENES: Scene[] = [
         { description: "wildlife", confidence: 0.90 },
       ],
       explicitContent: { maxLikelihood: "POSSIBLE", frames: [{ timeOffsetSeconds: 35.2, likelihood: "POSSIBLE" }] },
+      objects: [], persons: [], faces: [], logos: [],
     },
     geminiAnalysis: {
       summary: "肉食動物の狩りのシーン。暴力的な映像と難しい漢字が含まれる。",
@@ -143,6 +147,7 @@ export const DEMO_SCENES: Scene[] = [
         { description: "night", confidence: 0.80 },
       ],
       explicitContent: { maxLikelihood: "VERY_UNLIKELY", frames: [] },
+      objects: [], persons: [], faces: [], logos: [],
     },
     geminiAnalysis: {
       summary: "夜の動物園シーン。暗いBGMと映像で不安な雰囲気。",
@@ -176,6 +181,7 @@ export const DEMO_SCENES: Scene[] = [
         { description: "product", confidence: 0.85 },
       ],
       explicitContent: { maxLikelihood: "VERY_UNLIKELY", frames: [] },
+      objects: [], persons: [], faces: [], logos: [],
     },
     geminiAnalysis: {
       summary: "商品宣伝シーン。教育動画のコンテキストと矛盾する。",
@@ -216,6 +222,7 @@ export const DEMO_SCENES: Scene[] = [
         { description: "ending", confidence: 0.78 },
       ],
       explicitContent: { maxLikelihood: "VERY_UNLIKELY", frames: [] },
+      objects: [], persons: [], faces: [], logos: [],
     },
     geminiAnalysis: {
       summary: "エンディング。明るい雰囲気で適切な締めくくり。",

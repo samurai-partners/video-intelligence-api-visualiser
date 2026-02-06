@@ -76,7 +76,7 @@ export function AnalysisConfigForm() {
       {/* Video Purpose */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">
-          動画の目的
+          動画の目的（任意）
         </label>
         <input
           type="text"

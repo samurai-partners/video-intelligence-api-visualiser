@@ -22,6 +22,44 @@ export interface ExplicitContentFrame {
   likelihood: string;
 }
 
+export interface BoundingBox {
+  top: number;
+  left: number;
+  right: number;
+  bottom: number;
+}
+
+export interface TrackedObject {
+  description: string;
+  confidence: number;
+  startTimeSeconds: number;
+  endTimeSeconds: number;
+  frames: Array<{ timeSeconds: number; boundingBox: BoundingBox }>;
+}
+
+export interface PersonDetection {
+  startTimeSeconds: number;
+  endTimeSeconds: number;
+  landmarks: Array<{ name: string; x: number; y: number; confidence: number }>;
+  boundingBox: BoundingBox;
+}
+
+export interface FaceDetection {
+  startTimeSeconds: number;
+  endTimeSeconds: number;
+  confidence: number;
+  attributes: Array<{ name: string; confidence: number }>;
+  boundingBox: BoundingBox;
+}
+
+export interface LogoRecognition {
+  description: string;
+  startTimeSeconds: number;
+  endTimeSeconds: number;
+  confidence: number;
+  boundingBox: BoundingBox;
+}
+
 export interface SceneIssue {
   id: string;
   category: string;
@@ -45,6 +83,10 @@ export interface Scene {
       maxLikelihood: string;
       frames: ExplicitContentFrame[];
     };
+    objects: TrackedObject[];
+    persons: PersonDetection[];
+    faces: FaceDetection[];
+    logos: LogoRecognition[];
   };
   geminiAnalysis?: {
     summary: string;

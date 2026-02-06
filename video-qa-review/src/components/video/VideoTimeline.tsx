@@ -22,7 +22,7 @@ export function VideoTimeline({ duration, currentTime, onSeek }: VideoTimelinePr
     <div className="relative w-full">
       {/* Timeline bar */}
       <div
-        className="relative h-10 bg-gray-200 rounded-lg overflow-hidden cursor-pointer"
+        className="relative h-7 bg-gray-200 rounded overflow-hidden cursor-pointer"
         onClick={(e) => {
           const rect = e.currentTarget.getBoundingClientRect();
           const x = e.clientX - rect.left;
