@@ -1,8 +1,14 @@
+export interface TextFrame {
+  timeSeconds: number;
+  vertices: Array<{ x: number; y: number }>;
+}
+
 export interface DetectedText {
   text: string;
   confidence: number;
   startTimeSeconds: number;
   endTimeSeconds: number;
+  frames: TextFrame[];
 }
 
 export interface SpeechWord {

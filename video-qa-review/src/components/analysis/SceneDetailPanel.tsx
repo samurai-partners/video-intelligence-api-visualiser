@@ -173,49 +173,36 @@ export function SceneDetailPanel({ scene, currentTime = 0, onTimestampClick }: S
               sentences.map((sentence, si) => {
                 const isActiveSentence =
                   currentTime >= sentence.startTimeSeconds && currentTime < sentence.endTimeSeconds;
-                const isPastSentence = currentTime >= sentence.endTimeSeconds;
 
                 return (
-                  <div
+                  <p
                     key={si}
                     ref={isActiveSentence ? activeSentenceRef : undefined}
-                    onClick={() => onTimestampClick?.(sentence.startTimeSeconds)}
-                    className={`cursor-pointer rounded-lg px-3 py-2 transition-colors ${
+                    className={`rounded px-3 py-1.5 text-sm leading-relaxed transition-colors ${
                       isActiveSentence
-                        ? "bg-blue-100 border border-blue-300"
-                        : isPastSentence
-                        ? "bg-gray-50"
-                        : "hover:bg-gray-50"
+                        ? "border-2 border-blue-500 bg-blue-50"
+                        : "border-2 border-transparent"
                     }`}
                   >
-                    <span className="text-[10px] text-gray-400 mr-1">
-                      {formatTime(sentence.startTimeSeconds)}
-                    </span>
-                    <span className="text-sm leading-relaxed">
-                      {sentence.words.map((w, wi) => {
-                        const isActiveWord =
-                          isActiveSentence &&
-                          currentTime >= w.startTimeSeconds &&
-                          currentTime < w.endTimeSeconds;
-                        return (
-                          <span
-                            key={wi}
-                            className={
-                              isActiveWord
-                                ? "font-bold underline text-blue-900"
-                                : isPastSentence
-                                ? "text-gray-400"
-                                : isActiveSentence
-                                ? "text-blue-800"
-                                : "text-gray-700"
-                            }
-                          >
-                            {w.word}
-                          </span>
-                        );
-                      })}
-                    </span>
-                  </div>
+                    {sentence.words.map((w, wi) => {
+                      const isActiveWord =
+                        currentTime >= w.startTimeSeconds &&
+                        currentTime < w.endTimeSeconds;
+                      return (
+                        <span
+                          key={wi}
+                          onClick={() => onTimestampClick?.(w.startTimeSeconds)}
+                          className={`cursor-pointer hover:bg-blue-100 ${
+                            isActiveWord
+                              ? "border-b-[3px] border-red-500 text-gray-900"
+                              : "text-gray-700"
+                          }`}
+                        >
+                          {w.word}
+                        </span>
+                      );
+                    })}
+                  </p>
                 );
               })
             ) : (

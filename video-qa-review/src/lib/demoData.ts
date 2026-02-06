@@ -9,7 +9,7 @@ export const DEMO_SCENES: Scene[] = [
     durationSeconds: 6.2,
     viData: {
       detectedText: [
-        { text: "たのしい どうぶつえん", confidence: 0.95, startTimeSeconds: 0.5, endTimeSeconds: 5.0 },
+        { text: "たのしい どうぶつえん", confidence: 0.95, startTimeSeconds: 0.5, endTimeSeconds: 5.0, frames: [] },
       ],
       speechTranscription: [
         { word: "みなさん", startTimeSeconds: 1.0, endTimeSeconds: 1.5, confidence: 0.92 },
@@ -36,7 +36,7 @@ export const DEMO_SCENES: Scene[] = [
     durationSeconds: 12.3,
     viData: {
       detectedText: [
-        { text: "ライオンの憂鬱", confidence: 0.91, startTimeSeconds: 7.0, endTimeSeconds: 12.0 },
+        { text: "ライオンの憂鬱", confidence: 0.91, startTimeSeconds: 7.0, endTimeSeconds: 12.0, frames: [] },
       ],
       speechTranscription: [
         { word: "つぎは", startTimeSeconds: 6.5, endTimeSeconds: 7.0, confidence: 0.90 },
@@ -74,7 +74,7 @@ export const DEMO_SCENES: Scene[] = [
     durationSeconds: 13.5,
     viData: {
       detectedText: [
-        { text: "ぞうさんの おはなし", confidence: 0.93, startTimeSeconds: 19.0, endTimeSeconds: 25.0 },
+        { text: "ぞうさんの おはなし", confidence: 0.93, startTimeSeconds: 19.0, endTimeSeconds: 25.0, frames: [] },
       ],
       speechTranscription: [],
       fullTranscript: "ぞうさんは とっても おおきいね！おはなが ながいのが とくちょうだよ。",
@@ -98,7 +98,7 @@ export const DEMO_SCENES: Scene[] = [
     durationSeconds: 13.8,
     viData: {
       detectedText: [
-        { text: "肉食動物の狩り", confidence: 0.89, startTimeSeconds: 33.0, endTimeSeconds: 38.0 },
+        { text: "肉食動物の狩り", confidence: 0.89, startTimeSeconds: 33.0, endTimeSeconds: 38.0, frames: [] },
       ],
       speechTranscription: [],
       fullTranscript: "ここでは にくしょくどうぶつの かりの ようすを みてみましょう。",
@@ -171,8 +171,8 @@ export const DEMO_SCENES: Scene[] = [
     durationSeconds: 14.5,
     viData: {
       detectedText: [
-        { text: "おすすめ商品はこちら！", confidence: 0.94, startTimeSeconds: 60.0, endTimeSeconds: 66.0 },
-        { text: "www.example-shop.com", confidence: 0.88, startTimeSeconds: 62.0, endTimeSeconds: 66.0 },
+        { text: "おすすめ商品はこちら！", confidence: 0.94, startTimeSeconds: 60.0, endTimeSeconds: 66.0, frames: [] },
+        { text: "www.example-shop.com", confidence: 0.88, startTimeSeconds: 62.0, endTimeSeconds: 66.0, frames: [] },
       ],
       speechTranscription: [],
       fullTranscript: "ここで おすすめの しょうひんを しょうかいします！",
@@ -213,7 +213,7 @@ export const DEMO_SCENES: Scene[] = [
     durationSeconds: 12.5,
     viData: {
       detectedText: [
-        { text: "また あそぼうね！", confidence: 0.96, startTimeSeconds: 75.0, endTimeSeconds: 82.0 },
+        { text: "また あそぼうね！", confidence: 0.96, startTimeSeconds: 75.0, endTimeSeconds: 82.0, frames: [] },
       ],
       speechTranscription: [],
       fullTranscript: "きょうは たのしかったね！また あそぼうね！バイバーイ！",

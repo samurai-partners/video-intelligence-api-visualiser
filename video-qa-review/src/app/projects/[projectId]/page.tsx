@@ -11,9 +11,25 @@ import { SceneDetailPanel } from "@/components/analysis/SceneDetailPanel";
 import { IssueList } from "@/components/analysis/IssueList";
 import { AnalysisProgress } from "@/components/analysis/AnalysisProgress";
 import { AnalysisLogPanel, type LogEntry } from "@/components/analysis/AnalysisLogPanel";
-import { VideoOverlay } from "@/components/video/VideoOverlay";
+import { VideoOverlay, type DetectionType } from "@/components/video/VideoOverlay";
 import type { Scene } from "@/types/scene";
 import type { Issue } from "@/types/issue";
+
+const DETECTION_TYPE_LABELS: Record<DetectionType, string> = {
+  person: "人物",
+  face: "顔",
+  object: "物体",
+  logo: "ロゴ",
+  text: "テキスト",
+};
+
+const DETECTION_TYPE_COLORS: Record<DetectionType, string> = {
+  person: "bg-blue-500",
+  face: "bg-cyan-500",
+  object: "bg-green-500",
+  logo: "bg-yellow-500",
+  text: "bg-orange-500",
+};
 
 export default function ReviewPage({ params }: { params: Promise<{ projectId: string }> }) {
   const { projectId } = use(params);
@@ -21,7 +37,9 @@ export default function ReviewPage({ params }: { params: Promise<{ projectId: st
   const [currentTime, setCurrentTime] = useState(0);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [logModalOpen, setLogModalOpen] = useState(false);
-  const [overlayEnabled, setOverlayEnabled] = useState(true);
+  const [overlayTypes, setOverlayTypes] = useState<Set<DetectionType>>(
+    new Set(["person", "face", "object", "logo", "text"])
+  );
 
   // Resizable column widths
   const [leftWidth, setLeftWidth] = useState(120);
@@ -41,12 +59,31 @@ export default function ReviewPage({ params }: { params: Promise<{ projectId: st
   const videoFile = useProjectStore((s) => s.videoFile);
 
   const currentScene = scenes[currentSceneIndex] || null;
+  const setCurrentSceneIndex = useProjectStore((s) => s.setCurrentSceneIndex);
 
   const seekTo = useCallback((time: number) => {
     playerRef.current?.seekTo(time);
   }, []);
 
-  const setCurrentSceneIndex = useProjectStore((s) => s.setCurrentSceneIndex);
+  // Auto-update currentSceneIndex during playback
+  useEffect(() => {
+    if (scenes.length === 0) return;
+    const scene = scenes[currentSceneIndex];
+    if (!scene) return;
+    // If currentTime is within the current scene, no update needed
+    if (currentTime >= scene.startTimeSeconds && currentTime < scene.endTimeSeconds) return;
+    // Find the scene that contains currentTime
+    for (let i = 0; i < scenes.length; i++) {
+      if (currentTime >= scenes[i].startTimeSeconds && currentTime < scenes[i].endTimeSeconds) {
+        setCurrentSceneIndex(i);
+        return;
+      }
+    }
+    // Handle edge case: time is at or past the last scene's end
+    if (currentTime >= scenes[scenes.length - 1].startTimeSeconds) {
+      setCurrentSceneIndex(scenes.length - 1);
+    }
+  }, [currentTime, scenes, currentSceneIndex, setCurrentSceneIndex]);
 
   const handleSceneClick = useCallback(
     (index: number) => {
@@ -362,11 +399,12 @@ export default function ReviewPage({ params }: { params: Promise<{ projectId: st
               src={draftVideo.url}
               onTimeUpdate={setCurrentTime}
               overlay={
-                overlayEnabled ? (
+                overlayTypes.size > 0 ? (
                   <VideoOverlay
                     videoElement={playerRef.current?.getVideoElement() ?? null}
                     currentTime={currentTime}
                     scene={currentScene}
+                    enabledTypes={overlayTypes}
                   />
                 ) : undefined
               }
@@ -382,16 +420,37 @@ export default function ReviewPage({ params }: { params: Promise<{ projectId: st
             />
             <div className="flex items-center gap-2">
               <SceneNavigator />
-              <button
-                onClick={() => setOverlayEnabled((v) => !v)}
-                className={`ml-auto px-2 py-0.5 text-[10px] rounded font-medium transition-colors ${
-                  overlayEnabled
-                    ? "bg-blue-100 text-blue-700 hover:bg-blue-200"
-                    : "bg-gray-100 text-gray-400 hover:bg-gray-200"
-                }`}
-              >
-                {overlayEnabled ? "BB ON" : "BB OFF"}
-              </button>
+              <div className="ml-auto flex items-center gap-1.5">
+                {(Object.keys(DETECTION_TYPE_LABELS) as DetectionType[]).map((type) => {
+                  const enabled = overlayTypes.has(type);
+                  return (
+                    <label
+                      key={type}
+                      className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded cursor-pointer text-[10px] font-medium transition-colors select-none ${
+                        enabled
+                          ? "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                          : "bg-gray-50 text-gray-300 hover:bg-gray-100"
+                      }`}
+                    >
+                      <span className={`inline-block w-2 h-2 rounded-sm ${enabled ? DETECTION_TYPE_COLORS[type] : "bg-gray-300"}`} />
+                      <input
+                        type="checkbox"
+                        className="hidden"
+                        checked={enabled}
+                        onChange={() => {
+                          setOverlayTypes((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(type)) next.delete(type);
+                            else next.add(type);
+                            return next;
+                          });
+                        }}
+                      />
+                      {DETECTION_TYPE_LABELS[type]}
+                    </label>
+                  );
+                })}
+              </div>
             </div>
           </div>
 

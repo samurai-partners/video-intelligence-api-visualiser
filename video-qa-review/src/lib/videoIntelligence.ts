@@ -18,6 +18,7 @@ export interface VIRawResult {
     text: string;
     confidence: number;
     segments: Array<{ startSeconds: number; endSeconds: number }>;
+    frames: Array<{ timeSeconds: number; vertices: Array<{ x: number; y: number }> }>;
   }>;
   speechTranscriptions: Array<{
     transcript: string;
@@ -123,7 +124,18 @@ export async function analyzeVideo(videoBuffer: Buffer): Promise<VIRawResult> {
       endSeconds: timeOffsetToSeconds(seg.segment?.endTimeOffset),
     }));
     const confidence = ta.segments?.[0]?.confidence || 0;
-    return { text, confidence, segments };
+    const frames: Array<{ timeSeconds: number; vertices: Array<{ x: number; y: number }> }> = [];
+    for (const seg of ta.segments || []) {
+      for (const f of seg.frames || []) {
+        const verts = f.rotatedBoundingBox?.vertices;
+        if (!verts) continue;
+        frames.push({
+          timeSeconds: timeOffsetToSeconds(f.timeOffset),
+          vertices: verts.map((v) => ({ x: v.x || 0, y: v.y || 0 })),
+        });
+      }
+    }
+    return { text, confidence, segments, frames };
   });
 
   // Speech transcription
@@ -262,6 +274,7 @@ export function segmentIntoScenes(viResult: VIRawResult, videoDuration: number):
             confidence: ta.confidence,
             startTimeSeconds: seg.startSeconds,
             endTimeSeconds: seg.endSeconds,
+            frames: ta.frames.filter((f) => f.timeSeconds >= start && f.timeSeconds < end),
           });
         }
       }

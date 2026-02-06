@@ -35,7 +35,19 @@ export function parseVIJson(json: any): VIRawResult {
       };
     });
     const confidence = ta.segments?.[0]?.confidence || 0;
-    return { text, confidence, segments };
+    // Extract per-frame bounding boxes from all segments
+    const frames: Array<{ timeSeconds: number; vertices: Array<{ x: number; y: number }> }> = [];
+    for (const seg of ta.segments || []) {
+      for (const f of seg.frames || []) {
+        const rbb = f.rotated_bounding_box || f.rotatedBoundingBox;
+        if (!rbb?.vertices) continue;
+        frames.push({
+          timeSeconds: timeToSeconds(f.time_offset || f.timeOffset),
+          vertices: rbb.vertices.map((v: any) => ({ x: v.x || 0, y: v.y || 0 })),
+        });
+      }
+    }
+    return { text, confidence, segments, frames };
   });
 
   // Speech transcriptions

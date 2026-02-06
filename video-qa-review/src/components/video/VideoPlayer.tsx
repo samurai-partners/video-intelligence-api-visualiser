@@ -25,6 +25,8 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       seekTo: (time: number) => {
         if (videoRef.current) {
           videoRef.current.currentTime = time;
+          // Fire onTimeUpdate immediately so parent state syncs with seek
+          onTimeUpdate?.(time);
         }
       },
       play: () => {
