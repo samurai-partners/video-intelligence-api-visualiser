@@ -1,22 +1,25 @@
 "use client";
 
-import { useRef, useEffect, useCallback, forwardRef, useImperativeHandle } from "react";
+import { useRef, useState, useEffect, useCallback, forwardRef, useImperativeHandle } from "react";
 
 export interface VideoPlayerHandle {
   seekTo: (time: number) => void;
   play: () => void;
   pause: () => void;
   getCurrentTime: () => number;
+  getVideoElement: () => HTMLVideoElement | null;
 }
 
 interface VideoPlayerProps {
   src: string;
   onTimeUpdate?: (currentTime: number) => void;
+  overlay?: React.ReactNode;
 }
 
 export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
-  function VideoPlayer({ src, onTimeUpdate }, ref) {
+  function VideoPlayer({ src, onTimeUpdate, overlay }, ref) {
     const videoRef = useRef<HTMLVideoElement>(null);
+    const [videoReady, setVideoReady] = useState(false);
 
     useImperativeHandle(ref, () => ({
       seekTo: (time: number) => {
@@ -33,6 +36,9 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       getCurrentTime: () => {
         return videoRef.current?.currentTime || 0;
       },
+      getVideoElement: () => {
+        return videoRef.current;
+      },
     }));
 
     const handleTimeUpdate = useCallback(() => {
@@ -48,6 +54,11 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       return () => video.removeEventListener("timeupdate", handleTimeUpdate);
     }, [handleTimeUpdate]);
 
+    // Signal when video element is ready
+    useEffect(() => {
+      if (videoRef.current) setVideoReady(true);
+    }, []);
+
     return (
       <div className="relative w-full bg-black flex items-center justify-center" style={{ height: "35vh" }}>
         <video
@@ -55,7 +66,10 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
           src={src}
           controls
           className="max-w-full max-h-full"
+          onLoadedMetadata={() => setVideoReady(true)}
         />
+        {/* Overlay rendered on top of video, inside the same relative container */}
+        {videoReady && overlay}
       </div>
     );
   }

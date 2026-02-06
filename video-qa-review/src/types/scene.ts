@@ -37,11 +37,24 @@ export interface TrackedObject {
   frames: Array<{ timeSeconds: number; boundingBox: BoundingBox }>;
 }
 
+export interface TimestampedPersonObject {
+  timeSeconds: number;
+  boundingBox: BoundingBox;
+  landmarks: Array<{ name: string; x: number; y: number; confidence: number }>;
+}
+
 export interface PersonDetection {
   startTimeSeconds: number;
   endTimeSeconds: number;
   landmarks: Array<{ name: string; x: number; y: number; confidence: number }>;
   boundingBox: BoundingBox;
+  timestampedObjects: TimestampedPersonObject[];
+}
+
+export interface TimestampedFaceObject {
+  timeSeconds: number;
+  boundingBox: BoundingBox;
+  attributes: Array<{ name: string; confidence: number }>;
 }
 
 export interface FaceDetection {
@@ -50,6 +63,7 @@ export interface FaceDetection {
   confidence: number;
   attributes: Array<{ name: string; confidence: number }>;
   boundingBox: BoundingBox;
+  timestampedObjects: TimestampedFaceObject[];
 }
 
 export interface LogoRecognition {

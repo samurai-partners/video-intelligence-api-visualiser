@@ -11,6 +11,7 @@ import { SceneDetailPanel } from "@/components/analysis/SceneDetailPanel";
 import { IssueList } from "@/components/analysis/IssueList";
 import { AnalysisProgress } from "@/components/analysis/AnalysisProgress";
 import { AnalysisLogPanel, type LogEntry } from "@/components/analysis/AnalysisLogPanel";
+import { VideoOverlay } from "@/components/video/VideoOverlay";
 import type { Scene } from "@/types/scene";
 import type { Issue } from "@/types/issue";
 
@@ -20,6 +21,13 @@ export default function ReviewPage({ params }: { params: Promise<{ projectId: st
   const [currentTime, setCurrentTime] = useState(0);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [logModalOpen, setLogModalOpen] = useState(false);
+  const [overlayEnabled, setOverlayEnabled] = useState(true);
+
+  // Resizable column widths
+  const [leftWidth, setLeftWidth] = useState(120);
+  const [rightWidth, setRightWidth] = useState(288);
+  const draggingRef = useRef<"left" | "right" | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const draftVideo = useProjectStore((s) => s.draftVideo);
   const analysisStatus = useProjectStore((s) => s.analysisStatus);
@@ -82,6 +90,42 @@ export default function ReviewPage({ params }: { params: Promise<{ projectId: st
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [scenes, setCurrentSceneIndex]);
+
+  // Column resize handler
+  useEffect(() => {
+    function handleMouseMove(e: MouseEvent) {
+      if (!draggingRef.current || !containerRef.current) return;
+      e.preventDefault();
+      const rect = containerRef.current.getBoundingClientRect();
+
+      if (draggingRef.current === "left") {
+        const newWidth = Math.max(80, Math.min(300, e.clientX - rect.left));
+        setLeftWidth(newWidth);
+      } else {
+        const newWidth = Math.max(200, Math.min(500, rect.right - e.clientX));
+        setRightWidth(newWidth);
+      }
+    }
+
+    function handleMouseUp() {
+      draggingRef.current = null;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    }
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, []);
+
+  const startDrag = (side: "left" | "right") => {
+    draggingRef.current = side;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  };
 
   // SSE stream reader - shared between live and mock analysis
   const readSSEStream = useCallback(async (response: Response) => {
@@ -284,12 +328,21 @@ export default function ReviewPage({ params }: { params: Promise<{ projectId: st
         </div>
       </header>
 
-      {/* 3-column layout */}
-      <div className="flex flex-1 min-h-0">
+      {/* 3-column resizable layout */}
+      <div ref={containerRef} className="flex flex-1 min-h-0">
         {/* Left: Scene list */}
-        <aside className="w-28 border-r border-gray-200 bg-white flex-shrink-0 overflow-y-auto p-2">
+        <aside
+          className="border-r border-gray-200 bg-white flex-shrink-0 overflow-y-auto p-2"
+          style={{ width: leftWidth }}
+        >
           <SceneSidebar onSceneClick={handleSceneClick} />
         </aside>
+
+        {/* Left resize handle */}
+        <div
+          className="w-1 flex-shrink-0 cursor-col-resize bg-transparent hover:bg-blue-300 active:bg-blue-400 transition-colors"
+          onMouseDown={() => startDrag("left")}
+        />
 
         {/* Center: Video + Timeline + Scene Detail */}
         <div className="flex-1 flex flex-col min-w-0 min-h-0">
@@ -308,6 +361,15 @@ export default function ReviewPage({ params }: { params: Promise<{ projectId: st
               ref={playerRef}
               src={draftVideo.url}
               onTimeUpdate={setCurrentTime}
+              overlay={
+                overlayEnabled ? (
+                  <VideoOverlay
+                    videoElement={playerRef.current?.getVideoElement() ?? null}
+                    currentTime={currentTime}
+                    scene={currentScene}
+                  />
+                ) : undefined
+              }
             />
           </div>
 
@@ -318,20 +380,42 @@ export default function ReviewPage({ params }: { params: Promise<{ projectId: st
               currentTime={currentTime}
               onSeek={seekTo}
             />
-            <SceneNavigator />
+            <div className="flex items-center gap-2">
+              <SceneNavigator />
+              <button
+                onClick={() => setOverlayEnabled((v) => !v)}
+                className={`ml-auto px-2 py-0.5 text-[10px] rounded font-medium transition-colors ${
+                  overlayEnabled
+                    ? "bg-blue-100 text-blue-700 hover:bg-blue-200"
+                    : "bg-gray-100 text-gray-400 hover:bg-gray-200"
+                }`}
+              >
+                {overlayEnabled ? "BB ON" : "BB OFF"}
+              </button>
+            </div>
           </div>
 
-          {/* Scene detail - scrollable bottom */}
-          <div className="flex-1 overflow-y-auto p-3 min-h-0">
+          {/* Scene detail - fills remaining space */}
+          <div className="flex-1 min-h-0 bg-white">
             <SceneDetailPanel
               scene={currentScene}
+              currentTime={currentTime}
               onTimestampClick={seekTo}
             />
           </div>
         </div>
 
+        {/* Right resize handle */}
+        <div
+          className="w-1 flex-shrink-0 cursor-col-resize bg-transparent hover:bg-blue-300 active:bg-blue-400 transition-colors"
+          onMouseDown={() => startDrag("right")}
+        />
+
         {/* Right: Issues panel */}
-        <aside className="w-72 border-l border-gray-200 bg-white flex-shrink-0 overflow-y-auto p-3">
+        <aside
+          className="border-l border-gray-200 bg-white flex-shrink-0 overflow-y-auto p-3"
+          style={{ width: rightWidth }}
+        >
           <IssueList onIssueClick={seekTo} />
         </aside>
       </div>

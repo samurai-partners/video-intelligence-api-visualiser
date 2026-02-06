@@ -1,22 +1,36 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import type { Scene } from "@/types/scene";
-import { formatTime, SEVERITY_LABELS, CATEGORY_LABELS } from "@/lib/utils";
+import { formatTime, SEVERITY_LABELS, CATEGORY_LABELS, groupWordsIntoSentences } from "@/lib/utils";
 
 interface SceneDetailPanelProps {
   scene: Scene | null;
+  currentTime?: number;
   onTimestampClick?: (time: number) => void;
 }
 
 type Tab = "text" | "speech" | "labels" | "objects" | "persons" | "faces" | "logos" | "issues";
 
-export function SceneDetailPanel({ scene, onTimestampClick }: SceneDetailPanelProps) {
+export function SceneDetailPanel({ scene, currentTime = 0, onTimestampClick }: SceneDetailPanelProps) {
   const [activeTab, setActiveTab] = useState<Tab>("issues");
+  const activeSentenceRef = useRef<HTMLDivElement>(null);
+
+  const sentences = useMemo(
+    () => scene ? groupWordsIntoSentences(scene.viData.speechTranscription) : [],
+    [scene]
+  );
+
+  // Auto-scroll to active sentence in speech tab
+  useEffect(() => {
+    if (activeTab === "speech" && activeSentenceRef.current) {
+      activeSentenceRef.current.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }, [currentTime, activeTab]);
 
   if (!scene) {
     return (
-      <div className="rounded-lg border border-gray-200 p-8 text-center text-gray-400">
+      <div className="h-full flex items-center justify-center text-gray-400 text-sm">
         シーンを選択してください
       </div>
     );
@@ -34,19 +48,20 @@ export function SceneDetailPanel({ scene, onTimestampClick }: SceneDetailPanelPr
   ];
 
   return (
-    <div className="rounded-lg border border-gray-200">
-      {/* Header */}
-      <div className="px-4 py-3 border-b border-gray-200 bg-gray-50 rounded-t-lg">
-        <div className="flex items-center justify-between">
-          <h3 className="font-medium text-gray-900">
+    <div className="flex flex-col h-full">
+      {/* Sticky header + tabs */}
+      <div className="flex-shrink-0 bg-white border-b border-gray-200">
+        {/* Header */}
+        <div className="px-3 py-2 flex items-center justify-between">
+          <h3 className="font-medium text-gray-900 text-sm">
             シーン {scene.index + 1}
-            <span className="text-gray-400 text-sm ml-2">
+            <span className="text-gray-400 text-xs ml-2">
               {formatTime(scene.startTimeSeconds)} ~ {formatTime(scene.endTimeSeconds)}
             </span>
           </h3>
           {scene.geminiAnalysis && (
             <span
-              className={`text-xs px-2 py-1 rounded-full font-medium ${
+              className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
                 scene.geminiAnalysis.overallRisk === "high"
                   ? "bg-red-100 text-red-700"
                   : scene.geminiAnalysis.overallRisk === "medium"
@@ -63,32 +78,32 @@ export function SceneDetailPanel({ scene, onTimestampClick }: SceneDetailPanelPr
           )}
         </div>
         {scene.geminiAnalysis?.summary && (
-          <p className="text-sm text-gray-600 mt-1">{scene.geminiAnalysis.summary}</p>
+          <p className="text-xs text-gray-500 px-3 pb-2 -mt-1">{scene.geminiAnalysis.summary}</p>
         )}
+
+        {/* Tabs */}
+        <div className="flex overflow-x-auto border-t border-gray-100">
+          {tabs.map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`px-2 py-1.5 text-xs font-medium transition-colors whitespace-nowrap ${
+                activeTab === tab.key
+                  ? "text-blue-600 border-b-2 border-blue-600"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              {tab.label}
+              {tab.count !== undefined && tab.count > 0 && (
+                <span className="ml-0.5 text-[10px] opacity-60">{tab.count}</span>
+              )}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex border-b border-gray-200 overflow-x-auto">
-        {tabs.map((tab) => (
-          <button
-            key={tab.key}
-            onClick={() => setActiveTab(tab.key)}
-            className={`px-2 py-1.5 text-xs font-medium transition-colors whitespace-nowrap ${
-              activeTab === tab.key
-                ? "text-blue-600 border-b-2 border-blue-600"
-                : "text-gray-500 hover:text-gray-700"
-            }`}
-          >
-            {tab.label}
-            {tab.count !== undefined && tab.count > 0 && (
-              <span className="ml-0.5 text-[10px] opacity-60">{tab.count}</span>
-            )}
-          </button>
-        ))}
-      </div>
-
-      {/* Tab content */}
-      <div className="p-4">
+      {/* Scrollable tab content */}
+      <div className="flex-1 overflow-y-auto p-3 min-h-0">
         {activeTab === "issues" && (
           <div className="space-y-2">
             {(scene.geminiAnalysis?.issues || []).length === 0 ? (
@@ -130,7 +145,7 @@ export function SceneDetailPanel({ scene, onTimestampClick }: SceneDetailPanelPr
         )}
 
         {activeTab === "text" && (
-          <div className="space-y-2">
+          <div className="space-y-1">
             {scene.viData.detectedText.length === 0 ? (
               <p className="text-sm text-gray-400 text-center py-4">テキストなし</p>
             ) : (
@@ -151,11 +166,60 @@ export function SceneDetailPanel({ scene, onTimestampClick }: SceneDetailPanelPr
         )}
 
         {activeTab === "speech" && (
-          <div>
-            {scene.viData.fullTranscript ? (
-              <p className="text-sm text-gray-800 leading-relaxed">{scene.viData.fullTranscript}</p>
-            ) : (
+          <div className="space-y-1">
+            {sentences.length === 0 && !scene.viData.fullTranscript ? (
               <p className="text-sm text-gray-400 text-center py-4">音声なし</p>
+            ) : sentences.length > 0 ? (
+              sentences.map((sentence, si) => {
+                const isActiveSentence =
+                  currentTime >= sentence.startTimeSeconds && currentTime < sentence.endTimeSeconds;
+                const isPastSentence = currentTime >= sentence.endTimeSeconds;
+
+                return (
+                  <div
+                    key={si}
+                    ref={isActiveSentence ? activeSentenceRef : undefined}
+                    onClick={() => onTimestampClick?.(sentence.startTimeSeconds)}
+                    className={`cursor-pointer rounded-lg px-3 py-2 transition-colors ${
+                      isActiveSentence
+                        ? "bg-blue-100 border border-blue-300"
+                        : isPastSentence
+                        ? "bg-gray-50"
+                        : "hover:bg-gray-50"
+                    }`}
+                  >
+                    <span className="text-[10px] text-gray-400 mr-1">
+                      {formatTime(sentence.startTimeSeconds)}
+                    </span>
+                    <span className="text-sm leading-relaxed">
+                      {sentence.words.map((w, wi) => {
+                        const isActiveWord =
+                          isActiveSentence &&
+                          currentTime >= w.startTimeSeconds &&
+                          currentTime < w.endTimeSeconds;
+                        return (
+                          <span
+                            key={wi}
+                            className={
+                              isActiveWord
+                                ? "font-bold underline text-blue-900"
+                                : isPastSentence
+                                ? "text-gray-400"
+                                : isActiveSentence
+                                ? "text-blue-800"
+                                : "text-gray-700"
+                            }
+                          >
+                            {w.word}
+                          </span>
+                        );
+                      })}
+                    </span>
+                  </div>
+                );
+              })
+            ) : (
+              <p className="text-sm text-gray-800 leading-relaxed">{scene.viData.fullTranscript}</p>
             )}
           </div>
         )}

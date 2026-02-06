@@ -41,3 +41,46 @@ export const CATEGORY_LABELS: Record<string, string> = {
   context: "コンテキスト",
   custom_rule: "カスタムルール",
 };
+
+export interface SpeechSentence {
+  words: Array<{ word: string; startTimeSeconds: number; endTimeSeconds: number; confidence: number }>;
+  text: string;
+  startTimeSeconds: number;
+  endTimeSeconds: number;
+}
+
+export function groupWordsIntoSentences(
+  words: Array<{ word: string; startTimeSeconds: number; endTimeSeconds: number; confidence: number }>
+): SpeechSentence[] {
+  if (words.length === 0) return [];
+
+  const sentences: SpeechSentence[] = [];
+  let currentWords: typeof words = [];
+
+  for (const w of words) {
+    currentWords.push(w);
+    // Split on sentence-ending punctuation
+    if (/[.!?。！？]$/.test(w.word.trim())) {
+      sentences.push(buildSentence(currentWords));
+      currentWords = [];
+    }
+  }
+
+  // Remaining words form the last sentence
+  if (currentWords.length > 0) {
+    sentences.push(buildSentence(currentWords));
+  }
+
+  return sentences;
+}
+
+function buildSentence(
+  words: Array<{ word: string; startTimeSeconds: number; endTimeSeconds: number; confidence: number }>
+): SpeechSentence {
+  return {
+    words,
+    text: words.map((w) => w.word).join(""),
+    startTimeSeconds: words[0].startTimeSeconds,
+    endTimeSeconds: words[words.length - 1].endTimeSeconds,
+  };
+}

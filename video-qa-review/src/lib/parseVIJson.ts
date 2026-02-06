@@ -13,7 +13,7 @@ function timeToSeconds(offset: any): number {
 }
 
 export function parseVIJson(json: any): VIRawResult {
-  const ar = json.annotation_results?.[0] || json;
+  const ar = json.annotation_results?.[0] || json.annotationResults?.[0] || json;
 
   // Shot changes
   const shotChanges: number[] = [0];

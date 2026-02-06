@@ -329,12 +329,14 @@ export function segmentIntoScenes(viResult: VIRawResult, videoDuration: number):
     const scenePersons: PersonDetection[] = viResult.personDetections
       .filter((p) => p.startSeconds < end && p.endSeconds > start)
       .map((p) => {
-        const firstObj = p.timestampedObjects.find((to) => to.timeSeconds >= start && to.timeSeconds < end) || p.timestampedObjects[0];
+        const sceneObjects = p.timestampedObjects.filter((to) => to.timeSeconds >= start && to.timeSeconds < end);
+        const firstObj = sceneObjects[0] || p.timestampedObjects[0];
         return {
           startTimeSeconds: p.startSeconds,
           endTimeSeconds: p.endSeconds,
           landmarks: firstObj?.landmarks || [],
           boundingBox: firstObj?.boundingBox || { top: 0, left: 0, right: 0, bottom: 0 },
+          timestampedObjects: sceneObjects,
         };
       });
 
@@ -342,13 +344,15 @@ export function segmentIntoScenes(viResult: VIRawResult, videoDuration: number):
     const sceneFaces: FaceDetection[] = viResult.faceDetections
       .filter((f) => f.startSeconds < end && f.endSeconds > start)
       .map((f) => {
-        const firstObj = f.timestampedObjects.find((to) => to.timeSeconds >= start && to.timeSeconds < end) || f.timestampedObjects[0];
+        const sceneObjects = f.timestampedObjects.filter((to) => to.timeSeconds >= start && to.timeSeconds < end);
+        const firstObj = sceneObjects[0] || f.timestampedObjects[0];
         return {
           startTimeSeconds: f.startSeconds,
           endTimeSeconds: f.endSeconds,
           confidence: f.confidence,
           attributes: firstObj?.attributes || [],
           boundingBox: firstObj?.boundingBox || { top: 0, left: 0, right: 0, bottom: 0 },
+          timestampedObjects: sceneObjects,
         };
       });
 
