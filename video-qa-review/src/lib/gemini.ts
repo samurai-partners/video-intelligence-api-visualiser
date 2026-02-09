@@ -287,31 +287,28 @@ function parseChunkTranscriptionResponse(text: string, chunkScenes: ChunkSceneIn
 }
 
 /**
- * シーンを60秒以内のチャンクにグループ化。
- * シーン境界を尊重し、60秒を超えない範囲でシーンを足し算してまとめる。
+ * シーンを自然な区切りでチャンクにグループ化。
+ * シーンを順に足していき、累計が targetSeconds を超えたら
+ * そのシーンまで含めて区切る。シーンの途中では絶対に切らない。
+ * チャンクの長さはバラバラでOK — 処理速度のための分割であり、
+ * 正確な秒数で切る必要はない。
  */
-export function createTimeChunks(scenes: ChunkSceneInput[], maxChunkSeconds: number = 60): ChunkSceneInput[][] {
+export function createTimeChunks(scenes: ChunkSceneInput[], targetSeconds: number = 60): ChunkSceneInput[][] {
   const chunks: ChunkSceneInput[][] = [];
   let currentChunk: ChunkSceneInput[] = [];
   let chunkStartTime = 0;
 
-  // Allow up to 15s overshoot to avoid creating tiny chunks at boundaries
-  const overshootAllowance = 15;
-
   for (const scene of scenes) {
     if (currentChunk.length === 0) {
       chunkStartTime = scene.startTimeSeconds;
-      currentChunk.push(scene);
-    } else {
-      const chunkDuration = scene.endTimeSeconds - chunkStartTime;
-      if (chunkDuration <= maxChunkSeconds + overshootAllowance) {
-        // Include scene even if slightly over max — avoids tiny orphan chunks
-        currentChunk.push(scene);
-      } else {
-        chunks.push(currentChunk);
-        currentChunk = [scene];
-        chunkStartTime = scene.startTimeSeconds;
-      }
+    }
+    currentChunk.push(scene);
+
+    // このシーンを含めた時点で target を超えたら、ここで区切る
+    const chunkDuration = scene.endTimeSeconds - chunkStartTime;
+    if (chunkDuration >= targetSeconds) {
+      chunks.push(currentChunk);
+      currentChunk = [];
     }
   }
   if (currentChunk.length > 0) {
