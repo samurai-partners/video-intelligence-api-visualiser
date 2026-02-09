@@ -93,7 +93,9 @@ export function parseVIJson(json: any): VIRawResult {
 
   // Object annotations
   const rawObjects = ar.object_annotations || ar.objectAnnotations || [];
-  const objectAnnotations = rawObjects.map((oa: any) => {
+  const objectAnnotations = rawObjects
+    .filter((oa: any) => (oa.entity?.description || "").toLowerCase() !== "person")
+    .map((oa: any) => {
     const description = oa.entity?.description || "";
     const confidence = oa.confidence || 0;
     const seg = oa.segment || {};

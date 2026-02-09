@@ -16,8 +16,15 @@ export function SceneDetailPanel({ scene, currentTime = 0, onTimestampClick }: S
   const [activeTab, setActiveTab] = useState<Tab>("issues");
   const activeSentenceRef = useRef<HTMLDivElement>(null);
 
+  const speechSource = scene?.geminiTranscription?.words?.length ? "gemini" : "vi";
   const sentences = useMemo(
-    () => scene ? groupWordsIntoSentences(scene.viData.speechTranscription) : [],
+    () => {
+      if (!scene) return [];
+      const words = scene.geminiTranscription?.words?.length
+        ? scene.geminiTranscription.words
+        : scene.viData.speechTranscription;
+      return groupWordsIntoSentences(words);
+    },
     [scene]
   );
 
@@ -145,32 +152,62 @@ export function SceneDetailPanel({ scene, currentTime = 0, onTimestampClick }: S
         )}
 
         {activeTab === "text" && (
-          <div className="space-y-1">
-            {scene.viData.detectedText.length === 0 ? (
-              <p className="text-sm text-gray-400 text-center py-4">テキストなし</p>
-            ) : (
-              scene.viData.detectedText.map((t, i) => (
-                <button
-                  key={i}
-                  onClick={() => onTimestampClick?.(t.startTimeSeconds)}
-                  className="w-full text-left p-2 rounded hover:bg-gray-50 transition-colors"
-                >
-                  <span className="text-xs text-gray-400 mr-2">
-                    {formatTime(t.startTimeSeconds)}
-                  </span>
-                  <span className="text-sm text-gray-800">「{t.text}」</span>
-                </button>
-              ))
+          <div className="space-y-3">
+            {/* Gemini text summary */}
+            {scene.geminiAnalysis?.detectedTextSummary && (
+              <div className="p-3 bg-orange-50 rounded-lg border border-orange-200">
+                <h4 className="text-xs font-medium text-orange-700 mb-1">テキスト要約</h4>
+                <p className="text-sm text-gray-800 whitespace-pre-line leading-relaxed">
+                  {scene.geminiAnalysis.detectedTextSummary}
+                </p>
+              </div>
             )}
+
+            {/* VI OCR raw results */}
+            {scene.viData.detectedText.length === 0 && !scene.geminiAnalysis?.detectedTextSummary ? (
+              <p className="text-sm text-gray-400 text-center py-4">テキストなし</p>
+            ) : scene.viData.detectedText.length > 0 ? (
+              <>
+                {scene.geminiAnalysis?.detectedTextSummary && (
+                  <h4 className="text-xs font-medium text-gray-400 px-2">OCR検出結果</h4>
+                )}
+                <div className="space-y-1">
+                  {scene.viData.detectedText.map((t, i) => (
+                    <button
+                      key={i}
+                      onClick={() => onTimestampClick?.(t.startTimeSeconds)}
+                      className="w-full text-left px-2 py-1 rounded hover:bg-gray-50 transition-colors"
+                    >
+                      <span className="text-sm text-gray-800">「{t.text}」</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : null}
           </div>
         )}
 
         {activeTab === "speech" && (
-          <div className="space-y-1">
-            {sentences.length === 0 && !scene.viData.fullTranscript ? (
+          <div className="space-y-3">
+            {/* Gemini speech summary */}
+            {scene.geminiAnalysis?.speechSummary && (
+              <div className="p-3 bg-purple-50 rounded-lg border border-purple-200">
+                <h4 className="text-xs font-medium text-purple-700 mb-1">音声文字起こし（Gemini）</h4>
+                <p className="text-sm text-gray-800 whitespace-pre-line leading-relaxed">
+                  {scene.geminiAnalysis.speechSummary}
+                </p>
+              </div>
+            )}
+
+            {/* Word-level speech (Gemini or VI API) */}
+            {sentences.length === 0 && !scene.viData.fullTranscript && !scene.geminiAnalysis?.speechSummary ? (
               <p className="text-sm text-gray-400 text-center py-4">音声なし</p>
             ) : sentences.length > 0 ? (
-              sentences.map((sentence, si) => {
+              <>
+              <h4 className="text-xs font-medium text-gray-400 px-2">
+                ワードレベル（{speechSource === "gemini" ? "Gemini" : "VI API"}）
+              </h4>
+              {sentences.map((sentence, si) => {
                 const isActiveSentence =
                   currentTime >= sentence.startTimeSeconds && currentTime < sentence.endTimeSeconds;
 
@@ -204,10 +241,11 @@ export function SceneDetailPanel({ scene, currentTime = 0, onTimestampClick }: S
                     })}
                   </p>
                 );
-              })
-            ) : (
+              })}
+              </>
+            ) : scene.viData.fullTranscript && !scene.geminiAnalysis?.speechSummary ? (
               <p className="text-sm text-gray-800 leading-relaxed">{scene.viData.fullTranscript}</p>
-            )}
+            ) : null}
           </div>
         )}
 

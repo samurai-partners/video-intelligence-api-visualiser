@@ -1,9 +1,9 @@
 import { NextRequest } from "next/server";
 import { readFileSync } from "fs";
 import { join } from "path";
-import { segmentIntoScenes } from "@/lib/videoIntelligence";
+import { segmentIntoScenes, applyGeminiTranscription } from "@/lib/videoIntelligence";
 import { parseVIJson } from "@/lib/parseVIJson";
-import { analyzeSceneWithGemini } from "@/lib/gemini";
+import { analyzeSceneWithGemini, uploadVideoToGemini, transcribeWithGemini } from "@/lib/gemini";
 import type { ProjectConfig } from "@/types/project";
 import type { Issue, IssueCategory, IssueSeverity } from "@/types/issue";
 import { generateId, TARGET_AUDIENCE_LABELS } from "@/lib/utils";
@@ -58,6 +58,7 @@ export async function POST(request: NextRequest) {
         });
 
         let viResult;
+        let videoBuffer: Buffer | null = null;
 
         if (useMock) {
           // ===== MOCK MODE: Use pre-existing VI JSON =====
@@ -67,6 +68,15 @@ export async function POST(request: NextRequest) {
           const jsonPath = join(process.cwd(), "public", "sample", "test_json.json");
           const rawJson = JSON.parse(readFileSync(jsonPath, "utf8"));
           viResult = parseVIJson(rawJson);
+
+          // モックモードでもGemini動画解析のためにサンプル動画を読み込む
+          const videoPath = join(process.cwd(), "public", "sample", "test_video.mp4");
+          try {
+            videoBuffer = readFileSync(videoPath);
+            sendLog("info", `サンプル動画読み込み完了 (${(videoBuffer.length / 1024 / 1024).toFixed(1)} MB)`);
+          } catch {
+            sendLog("warn", "サンプル動画が見つかりません。Gemini動画解析はスキップされます。");
+          }
 
           sendLog("success", "サンプルJSON読み込み完了");
         } else {
@@ -88,7 +98,7 @@ export async function POST(request: NextRequest) {
 
           sendStatus("uploading");
           sendLog("info", `動画ファイル読み込み中: ${videoFile.name} (${(videoFile.size / 1024 / 1024).toFixed(1)} MB)`);
-          const videoBuffer = Buffer.from(await videoFile.arrayBuffer());
+          videoBuffer = Buffer.from(await videoFile.arrayBuffer());
           sendLog("success", "動画ファイル読み込み完了");
 
           sendStatus("analyzing_vi");
@@ -129,13 +139,39 @@ export async function POST(request: NextRequest) {
         const allIssues: Issue[] = [];
 
         if (hasGeminiKey) {
-          sendLog("info", `Gemini API による ${scenes.length} シーンの分析開始`);
+          // Geminiに動画をアップロード（1回だけ）
+          let videoFileUri: string | undefined;
+          if (videoBuffer) {
+            sendLog("info", "Gemini Files API に動画をアップロード中...");
+            try {
+              videoFileUri = await uploadVideoToGemini(videoBuffer);
+              sendLog("success", "Gemini動画アップロード完了");
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : "不明なエラー";
+              sendLog("warn", `Gemini動画アップロード失敗: ${msg}（テキストのみで解析を続行）`);
+            }
+          }
+
+          // Gemini音声文字起こし（動画URIがある場合のみ）
+          if (videoFileUri) {
+            sendLog("info", "Gemini API で音声文字起こし開始...");
+            try {
+              const transcription = await transcribeWithGemini(videoFileUri);
+              applyGeminiTranscription(scenes, transcription);
+              sendLog("success", `Gemini音声文字起こし完了: ${transcription.words.length}ワード`);
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : "不明なエラー";
+              sendLog("warn", `Gemini音声文字起こし失敗: ${msg}（VI API音声をフォールバック使用）`);
+            }
+          }
+
+          sendLog("info", `Gemini API による ${scenes.length} シーンの分析開始${videoFileUri ? "（動画付き）" : "（テキストのみ）"}`);
 
           for (const scene of scenes) {
             const startGemini = Date.now();
             sendLog("info", `シーン ${scene.index + 1}/${scenes.length} を分析中...`);
 
-            const result = await analyzeSceneWithGemini(scene, scenes.length, config);
+            const result = await analyzeSceneWithGemini(scene, scenes.length, config, videoFileUri);
             const geminiDuration = Date.now() - startGemini;
 
             scene.geminiAnalysis = {
@@ -149,6 +185,8 @@ export async function POST(request: NextRequest) {
                 timestamp: issue.timestamp,
               })),
               overallRisk: result.overallRisk,
+              detectedTextSummary: result.detectedTextSummary || undefined,
+              speechSummary: result.speechSummary || undefined,
             };
 
             for (const issue of result.issues) {

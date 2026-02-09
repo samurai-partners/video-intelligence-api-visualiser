@@ -1,6 +1,6 @@
 import { protos, VideoIntelligenceServiceClient } from "@google-cloud/video-intelligence";
 import { timeOffsetToSeconds } from "./utils";
-import type { Scene, DetectedText, SpeechWord, SceneLabel, ExplicitContentFrame, TrackedObject, PersonDetection, FaceDetection, LogoRecognition, BoundingBox } from "@/types/scene";
+import type { Scene, DetectedText, SpeechWord, SceneLabel, ExplicitContentFrame, TrackedObject, PersonDetection, FaceDetection, LogoRecognition, BoundingBox, GeminiTranscription } from "@/types/scene";
 
 const Feature = protos.google.cloud.videointelligence.v1.Feature;
 
@@ -168,8 +168,10 @@ export async function analyzeVideo(videoBuffer: Buffer): Promise<VIRawResult> {
     return { description, confidence, segments };
   });
 
-  // Object tracking
-  const objectAnnotations = (annotationResults.objectAnnotations || []).map((oa) => {
+  // Object tracking (filter out "person" - handled by PERSON_DETECTION)
+  const objectAnnotations = (annotationResults.objectAnnotations || [])
+    .filter((oa) => (oa.entity?.description || "").toLowerCase() !== "person")
+    .map((oa) => {
     const description = oa.entity?.description || "";
     const confidence = oa.confidence || 0;
     const startSeconds = timeOffsetToSeconds(oa.segment?.startTimeOffset);
@@ -338,11 +340,11 @@ export function segmentIntoScenes(viResult: VIRawResult, videoDuration: number):
         frames: o.frames.filter((f) => f.timeSeconds >= start && f.timeSeconds < end),
       }));
 
-    // Collect person detections for this scene
+    // Collect person detections for this scene (±0.15s buffer for edge frames)
     const scenePersons: PersonDetection[] = viResult.personDetections
       .filter((p) => p.startSeconds < end && p.endSeconds > start)
       .map((p) => {
-        const sceneObjects = p.timestampedObjects.filter((to) => to.timeSeconds >= start && to.timeSeconds < end);
+        const sceneObjects = p.timestampedObjects.filter((to) => to.timeSeconds >= start - 0.15 && to.timeSeconds < end + 0.15);
         const firstObj = sceneObjects[0] || p.timestampedObjects[0];
         return {
           startTimeSeconds: p.startSeconds,
@@ -353,11 +355,11 @@ export function segmentIntoScenes(viResult: VIRawResult, videoDuration: number):
         };
       });
 
-    // Collect face detections for this scene
+    // Collect face detections for this scene (±0.15s buffer for edge frames)
     const sceneFaces: FaceDetection[] = viResult.faceDetections
       .filter((f) => f.startSeconds < end && f.endSeconds > start)
       .map((f) => {
-        const sceneObjects = f.timestampedObjects.filter((to) => to.timeSeconds >= start && to.timeSeconds < end);
+        const sceneObjects = f.timestampedObjects.filter((to) => to.timeSeconds >= start - 0.15 && to.timeSeconds < end + 0.15);
         const firstObj = sceneObjects[0] || f.timestampedObjects[0];
         return {
           startTimeSeconds: f.startSeconds,
@@ -403,4 +405,30 @@ export function segmentIntoScenes(viResult: VIRawResult, videoDuration: number):
   }
 
   return scenes;
+}
+
+/**
+ * Gemini文字起こし結果を各シーンに分配する。
+ */
+export function applyGeminiTranscription(
+  scenes: Scene[],
+  transcription: { words: Array<{ word: string; startSeconds: number; endSeconds: number }>; fullTranscript: string }
+): void {
+  for (const scene of scenes) {
+    const sceneWords: SpeechWord[] = transcription.words
+      .filter((w) => w.startSeconds >= scene.startTimeSeconds && w.startSeconds < scene.endTimeSeconds)
+      .map((w) => ({
+        word: w.word,
+        startTimeSeconds: w.startSeconds,
+        endTimeSeconds: w.endSeconds,
+        confidence: 1.0,
+      }));
+
+    if (sceneWords.length > 0) {
+      scene.geminiTranscription = {
+        words: sceneWords,
+        fullTranscript: sceneWords.map((w) => w.word).join(""),
+      };
+    }
+  }
 }

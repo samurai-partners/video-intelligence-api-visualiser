@@ -80,6 +80,11 @@ export interface LogoRecognition {
   boundingBox: BoundingBox;
 }
 
+export interface GeminiTranscription {
+  words: SpeechWord[];
+  fullTranscript: string;
+}
+
 export interface SceneIssue {
   id: string;
   category: string;
@@ -108,9 +113,12 @@ export interface Scene {
     faces: FaceDetection[];
     logos: LogoRecognition[];
   };
+  geminiTranscription?: GeminiTranscription;
   geminiAnalysis?: {
     summary: string;
     issues: SceneIssue[];
     overallRisk: "low" | "medium" | "high";
+    detectedTextSummary?: string;
+    speechSummary?: string;
   };
 }

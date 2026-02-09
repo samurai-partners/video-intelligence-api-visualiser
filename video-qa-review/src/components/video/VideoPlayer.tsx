@@ -14,10 +14,11 @@ interface VideoPlayerProps {
   src: string;
   onTimeUpdate?: (currentTime: number) => void;
   overlay?: React.ReactNode;
+  height?: number;
 }
 
 export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
-  function VideoPlayer({ src, onTimeUpdate, overlay }, ref) {
+  function VideoPlayer({ src, onTimeUpdate, overlay, height }, ref) {
     const videoRef = useRef<HTMLVideoElement>(null);
     const [videoReady, setVideoReady] = useState(false);
 
@@ -62,7 +63,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
     }, []);
 
     return (
-      <div className="relative w-full bg-black flex items-center justify-center" style={{ height: "35vh" }}>
+      <div className="relative w-full bg-black flex items-center justify-center" style={{ height: height ? `${height}px` : "35vh" }}>
         <video
           ref={videoRef}
           src={src}

@@ -44,8 +44,11 @@ export default function ReviewPage({ params }: { params: Promise<{ projectId: st
   // Resizable column widths
   const [leftWidth, setLeftWidth] = useState(120);
   const [rightWidth, setRightWidth] = useState(288);
+  const [videoHeight, setVideoHeight] = useState(280);
   const draggingRef = useRef<"left" | "right" | null>(null);
+  const verticalDraggingRef = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const centerColumnRef = useRef<HTMLDivElement>(null);
 
   const draftVideo = useProjectStore((s) => s.draftVideo);
   const analysisStatus = useProjectStore((s) => s.analysisStatus);
@@ -128,24 +131,28 @@ export default function ReviewPage({ params }: { params: Promise<{ projectId: st
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [scenes, setCurrentSceneIndex]);
 
-  // Column resize handler
+  // Column + vertical resize handler
   useEffect(() => {
     function handleMouseMove(e: MouseEvent) {
-      if (!draggingRef.current || !containerRef.current) return;
       e.preventDefault();
-      const rect = containerRef.current.getBoundingClientRect();
 
-      if (draggingRef.current === "left") {
-        const newWidth = Math.max(80, Math.min(300, e.clientX - rect.left));
-        setLeftWidth(newWidth);
-      } else {
-        const newWidth = Math.max(200, Math.min(500, rect.right - e.clientX));
-        setRightWidth(newWidth);
+      if (draggingRef.current && containerRef.current) {
+        const rect = containerRef.current.getBoundingClientRect();
+        if (draggingRef.current === "left") {
+          setLeftWidth(Math.max(80, Math.min(300, e.clientX - rect.left)));
+        } else {
+          setRightWidth(Math.max(200, Math.min(500, rect.right - e.clientX)));
+        }
+      } else if (verticalDraggingRef.current && centerColumnRef.current) {
+        const centerRect = centerColumnRef.current.getBoundingClientRect();
+        const newHeight = Math.max(120, Math.min(centerRect.height - 100, e.clientY - centerRect.top));
+        setVideoHeight(newHeight);
       }
     }
 
     function handleMouseUp() {
       draggingRef.current = null;
+      verticalDraggingRef.current = false;
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
     }
@@ -161,6 +168,12 @@ export default function ReviewPage({ params }: { params: Promise<{ projectId: st
   const startDrag = (side: "left" | "right") => {
     draggingRef.current = side;
     document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  };
+
+  const startVerticalDrag = () => {
+    verticalDraggingRef.current = true;
+    document.body.style.cursor = "row-resize";
     document.body.style.userSelect = "none";
   };
 
@@ -382,7 +395,7 @@ export default function ReviewPage({ params }: { params: Promise<{ projectId: st
         />
 
         {/* Center: Video + Timeline + Scene Detail */}
-        <div className="flex-1 flex flex-col min-w-0 min-h-0">
+        <div ref={centerColumnRef} className="flex-1 flex flex-col min-w-0 min-h-0">
           {/* Pending prompt */}
           {analysisStatus === "pending" && scenes.length === 0 && (
             <div className="bg-blue-50 border-b border-blue-200 px-4 py-1.5 text-center flex-shrink-0">
@@ -398,6 +411,7 @@ export default function ReviewPage({ params }: { params: Promise<{ projectId: st
               ref={playerRef}
               src={draftVideo.url}
               onTimeUpdate={setCurrentTime}
+              height={videoHeight}
               overlay={
                 overlayTypes.size > 0 ? (
                   <VideoOverlay
@@ -453,6 +467,12 @@ export default function ReviewPage({ params }: { params: Promise<{ projectId: st
               </div>
             </div>
           </div>
+
+          {/* Vertical resize handle */}
+          <div
+            className="h-1 flex-shrink-0 cursor-row-resize bg-transparent hover:bg-blue-300 active:bg-blue-400 transition-colors"
+            onMouseDown={startVerticalDrag}
+          />
 
           {/* Scene detail - fills remaining space */}
           <div className="flex-1 min-h-0 bg-white">
