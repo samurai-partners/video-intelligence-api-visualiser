@@ -78,6 +78,13 @@ export async function POST(request: NextRequest) {
             }));
             const chunks = createTimeChunks(chunkInputs);
 
+            // Log chunk details for debugging
+            for (let ci = 0; ci < chunks.length; ci++) {
+              const c = chunks[ci];
+              const dur = (c[c.length - 1].endTimeSeconds - c[0].startTimeSeconds).toFixed(1);
+              sendLog("info", `チャンク${ci + 1}: ${c[0].startTimeSeconds.toFixed(1)}s〜${c[c.length - 1].endTimeSeconds.toFixed(1)}s (${dur}s, ${c.length}シーン, scenes ${c[0].sceneIndex}〜${c[c.length - 1].sceneIndex})`);
+            }
+
             // Cut video into chunks with ffmpeg
             sendStatus("importing_upload");
             sendLog("info", `ffmpegで動画を${chunks.length}チャンクに切り出し中...`);

@@ -295,16 +295,23 @@ export function createTimeChunks(scenes: ChunkSceneInput[], maxChunkSeconds: num
   let currentChunk: ChunkSceneInput[] = [];
   let chunkStartTime = 0;
 
+  // Allow up to 15s overshoot to avoid creating tiny chunks at boundaries
+  const overshootAllowance = 15;
+
   for (const scene of scenes) {
     if (currentChunk.length === 0) {
       chunkStartTime = scene.startTimeSeconds;
       currentChunk.push(scene);
-    } else if (scene.endTimeSeconds - chunkStartTime <= maxChunkSeconds) {
-      currentChunk.push(scene);
     } else {
-      chunks.push(currentChunk);
-      currentChunk = [scene];
-      chunkStartTime = scene.startTimeSeconds;
+      const chunkDuration = scene.endTimeSeconds - chunkStartTime;
+      if (chunkDuration <= maxChunkSeconds + overshootAllowance) {
+        // Include scene even if slightly over max — avoids tiny orphan chunks
+        currentChunk.push(scene);
+      } else {
+        chunks.push(currentChunk);
+        currentChunk = [scene];
+        chunkStartTime = scene.startTimeSeconds;
+      }
     }
   }
   if (currentChunk.length > 0) {
