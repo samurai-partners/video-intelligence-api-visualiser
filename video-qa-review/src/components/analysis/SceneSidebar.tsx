@@ -12,7 +12,9 @@ export function SceneSidebar({ onSceneClick }: SceneSidebarProps) {
   const scenes = useProjectStore((s) => s.scenes);
   const currentSceneIndex = useProjectStore((s) => s.currentSceneIndex);
   const setCurrentSceneIndex = useProjectStore((s) => s.setCurrentSceneIndex);
+  const analysisStatus = useProjectStore((s) => s.analysisStatus);
   const itemRefs = useRef<Map<number, HTMLButtonElement>>(new Map());
+  const isTranscribing = analysisStatus === "importing_transcribe";
 
   const handleClick = (index: number) => {
     setCurrentSceneIndex(index);
@@ -41,14 +43,26 @@ export function SceneSidebar({ onSceneClick }: SceneSidebarProps) {
             const issueCount = scene.geminiAnalysis?.issues.length || 0;
             const isActive = scene.index === currentSceneIndex;
 
-            const dot =
-              risk === "high"
-                ? "bg-red-500"
-                : risk === "medium"
-                ? "bg-yellow-500"
-                : issueCount > 0
-                ? "bg-yellow-400"
-                : "bg-gray-300";
+            const hasTranscription = !!scene.geminiTranscription;
+            const waitingForTranscription = isTranscribing && !hasTranscription;
+
+            const dot = waitingForTranscription
+              ? "bg-purple-400 animate-pulse"
+              : hasTranscription
+              ? (risk === "high"
+                  ? "bg-red-500"
+                  : risk === "medium"
+                  ? "bg-yellow-500"
+                  : issueCount > 0
+                  ? "bg-yellow-400"
+                  : "bg-green-400")
+              : (risk === "high"
+                  ? "bg-red-500"
+                  : risk === "medium"
+                  ? "bg-yellow-500"
+                  : issueCount > 0
+                  ? "bg-yellow-400"
+                  : "bg-gray-300");
 
             return (
               <button
