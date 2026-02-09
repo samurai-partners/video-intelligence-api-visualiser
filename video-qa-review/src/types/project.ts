@@ -19,6 +19,9 @@ export type AnalysisStatus =
   | "analyzing_vi"
   | "segmenting"
   | "analyzing_gemini"
+  | "importing_parse"
+  | "importing_upload"
+  | "importing_transcribe"
   | "completed"
   | "failed";
 

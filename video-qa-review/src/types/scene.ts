@@ -83,6 +83,9 @@ export interface LogoRecognition {
 export interface GeminiTranscription {
   words: SpeechWord[];
   fullTranscript: string;
+  detectedLanguage?: string;
+  translatedTranscript?: string;
+  translatedWords?: SpeechWord[];
 }
 
 export interface SceneIssue {

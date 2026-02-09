@@ -10,6 +10,12 @@ import { generateId, TARGET_AUDIENCE_LABELS } from "@/lib/utils";
 
 export const maxDuration = 300;
 
+const LANGUAGE_LABELS: Record<string, string> = {
+  ja: "日本語", en: "英語", zh: "中国語", ko: "韓国語", ar: "アラビア語",
+  es: "スペイン語", fr: "フランス語", de: "ドイツ語", pt: "ポルトガル語",
+  hi: "ヒンディー語", th: "タイ語", vi: "ベトナム語", id: "インドネシア語",
+};
+
 export async function POST(request: NextRequest) {
   const encoder = new TextEncoder();
 
@@ -105,7 +111,7 @@ export async function POST(request: NextRequest) {
           sendLog("info", "Video Intelligence API 呼び出し開始");
 
           const { analyzeVideo } = await import("@/lib/videoIntelligence");
-          viResult = await analyzeVideo(videoBuffer);
+          viResult = await analyzeVideo(videoBuffer, config.language === "auto" ? "ja" : config.language);
         }
 
         // Log VI results
@@ -154,11 +160,15 @@ export async function POST(request: NextRequest) {
 
           // Gemini音声文字起こし（動画URIがある場合のみ）
           if (videoFileUri) {
-            sendLog("info", "Gemini API で音声文字起こし開始...");
+            sendLog("info", "Gemini API で多言語音声文字起こし開始...");
             try {
-              const transcription = await transcribeWithGemini(videoFileUri);
+              const transcription = await transcribeWithGemini(videoFileUri, "ja");
               applyGeminiTranscription(scenes, transcription);
-              sendLog("success", `Gemini音声文字起こし完了: ${transcription.words.length}ワード`);
+              const langLabel = LANGUAGE_LABELS[transcription.detectedLanguage] || transcription.detectedLanguage;
+              sendLog("success", `Gemini音声文字起こし完了: ${transcription.words.length}ワード（検出言語: ${langLabel}）`);
+              if (transcription.translatedTranscript) {
+                sendLog("info", `日本語翻訳あり`);
+              }
             } catch (err) {
               const msg = err instanceof Error ? err.message : "不明なエラー";
               sendLog("warn", `Gemini音声文字起こし失敗: ${msg}（VI API音声をフォールバック使用）`);

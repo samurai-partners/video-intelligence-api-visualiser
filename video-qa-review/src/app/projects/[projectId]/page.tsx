@@ -60,6 +60,7 @@ export default function ReviewPage({ params }: { params: Promise<{ projectId: st
   const draftConfig = useProjectStore((s) => s.draftConfig);
   const projectName = useProjectStore((s) => s.projectName);
   const videoFile = useProjectStore((s) => s.videoFile);
+  const transcriptionProgress = useProjectStore((s) => s.transcriptionProgress);
 
   const currentScene = scenes[currentSceneIndex] || null;
   const setCurrentSceneIndex = useProjectStore((s) => s.setCurrentSceneIndex);
@@ -204,9 +205,20 @@ export default function ReviewPage({ params }: { params: Promise<{ projectId: st
             setLogs((prev) => [...prev, payload.data as LogEntry]);
           } else if (payload.type === "status") {
             setAnalysisStatus(payload.data.status);
+          } else if (payload.type === "transcription_scene") {
+            const { sceneIndex, geminiTranscription, completedScenes, totalScenes } = payload.data;
+            const store = useProjectStore.getState();
+            if (geminiTranscription) {
+              store.updateScenesTranscription([{
+                index: sceneIndex,
+                geminiTranscription,
+              }]);
+            }
+            store.setTranscriptionProgress({ completed: completedScenes, total: totalScenes });
           } else if (payload.type === "result") {
             setScenes(payload.data.scenes as Scene[]);
             setIssues(payload.data.issues as Issue[]);
+            useProjectStore.getState().setTranscriptionProgress(null);
             setAnalysisStatus("completed");
           } else if (payload.type === "error") {
             setAnalysisStatus("failed");
@@ -308,8 +320,8 @@ export default function ReviewPage({ params }: { params: Promise<{ projectId: st
     );
   }
 
-  // Analyzing state - show progress with log
-  if (analysisStatus !== "pending" && analysisStatus !== "completed" && analysisStatus !== "failed") {
+  // Analyzing state - show progress with log (importing_transcribe shows review UI with banner)
+  if (analysisStatus !== "pending" && analysisStatus !== "completed" && analysisStatus !== "failed" && analysisStatus !== "importing_transcribe") {
     return (
       <div className="max-w-2xl mx-auto px-6 py-12">
         <h1 className="text-2xl font-bold mb-6">解析中...</h1>
@@ -358,7 +370,7 @@ export default function ReviewPage({ params }: { params: Promise<{ projectId: st
               再試行
             </button>
           )}
-          {analysisStatus === "completed" && (
+          {(analysisStatus === "completed" || analysisStatus === "importing_transcribe") && (
             <Link
               href={`/projects/${projectId}/report`}
               className="px-3 py-1 bg-green-600 text-white rounded text-xs font-medium hover:bg-green-700 transition-colors"
@@ -402,6 +414,27 @@ export default function ReviewPage({ params }: { params: Promise<{ projectId: st
               <p className="text-blue-700 text-xs">
                 「AI解析を開始」or「サンプルJSONで解析」を押してください
               </p>
+            </div>
+          )}
+
+          {/* Gemini transcription in progress banner */}
+          {analysisStatus === "importing_transcribe" && (
+            <div className="bg-purple-50 border-b border-purple-200 px-4 py-1.5 text-center flex-shrink-0">
+              <p className="text-purple-700 text-xs flex items-center justify-center gap-2">
+                <span className="inline-block w-2 h-2 bg-purple-500 rounded-full animate-pulse" />
+                {transcriptionProgress
+                  ? `Gemini文字起こし中... ${transcriptionProgress.completed}/${transcriptionProgress.total} シーン完了`
+                  : "Gemini高品質文字起こし中... 完了次第、音声データが自動更新されます"
+                }
+              </p>
+              {transcriptionProgress && (
+                <div className="mt-1 mx-auto max-w-xs h-1 bg-purple-200 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-purple-500 rounded-full transition-all duration-500"
+                    style={{ width: `${(transcriptionProgress.completed / transcriptionProgress.total * 100)}%` }}
+                  />
+                </div>
+              )}
             </div>
           )}
 

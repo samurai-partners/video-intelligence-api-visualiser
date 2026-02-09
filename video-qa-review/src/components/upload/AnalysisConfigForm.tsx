@@ -12,10 +12,20 @@ const AUDIENCE_OPTIONS: { value: TargetAudience; label: string }[] = [
 ];
 
 const LANGUAGE_OPTIONS = [
+  { value: "auto", label: "自動検出" },
   { value: "ja", label: "日本語" },
   { value: "en", label: "英語" },
   { value: "zh", label: "中国語" },
   { value: "ko", label: "韓国語" },
+  { value: "ar", label: "アラビア語" },
+  { value: "es", label: "スペイン語" },
+  { value: "fr", label: "フランス語" },
+  { value: "de", label: "ドイツ語" },
+  { value: "pt", label: "ポルトガル語" },
+  { value: "hi", label: "ヒンディー語" },
+  { value: "th", label: "タイ語" },
+  { value: "vi", label: "ベトナム語" },
+  { value: "id", label: "インドネシア語" },
 ];
 
 export function AnalysisConfigForm() {

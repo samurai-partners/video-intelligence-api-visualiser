@@ -2,7 +2,7 @@
 
 import { create } from "zustand";
 import type { ProjectConfig, AnalysisStatus, TargetAudience } from "@/types/project";
-import type { Scene } from "@/types/scene";
+import type { Scene, GeminiTranscription } from "@/types/scene";
 import type { Issue } from "@/types/issue";
 
 interface DraftVideo {
@@ -26,6 +26,7 @@ interface ProjectState {
   analysisStatus: AnalysisStatus;
   scenes: Scene[];
   issues: Issue[];
+  transcriptionProgress: { completed: number; total: number } | null;
 
   // Current view state
   currentSceneIndex: number;
@@ -39,6 +40,8 @@ interface ProjectState {
   setAnalysisStatus: (status: AnalysisStatus) => void;
   setScenes: (scenes: Scene[]) => void;
   setIssues: (issues: Issue[]) => void;
+  updateScenesTranscription: (updates: Array<{ index: number; geminiTranscription: GeminiTranscription }>) => void;
+  setTranscriptionProgress: (progress: { completed: number; total: number } | null) => void;
   setCurrentSceneIndex: (index: number) => void;
   toggleSeverityFilter: (severity: string) => void;
   updateIssueStatus: (issueId: string, status: Issue["status"]) => void;
@@ -48,7 +51,7 @@ interface ProjectState {
 const defaultConfig: ProjectConfig = {
   targetAudience: "children_3_6" as TargetAudience,
   videoPurpose: "",
-  language: "ja",
+  language: "auto",
   additionalRules: "",
 };
 
@@ -60,6 +63,7 @@ export const useProjectStore = create<ProjectState>((set) => ({
   analysisStatus: "pending",
   scenes: [],
   issues: [],
+  transcriptionProgress: null,
   currentSceneIndex: 0,
   filterSeverity: new Set(["critical", "warning", "info"]),
 
@@ -73,6 +77,15 @@ export const useProjectStore = create<ProjectState>((set) => ({
   setAnalysisStatus: (status) => set({ analysisStatus: status }),
   setScenes: (scenes) => set({ scenes }),
   setIssues: (issues) => set({ issues }),
+  updateScenesTranscription: (updates) =>
+    set((state) => ({
+      scenes: state.scenes.map((scene) => {
+        const update = updates.find((u) => u.index === scene.index);
+        if (!update) return scene;
+        return { ...scene, geminiTranscription: update.geminiTranscription };
+      }),
+    })),
+  setTranscriptionProgress: (progress) => set({ transcriptionProgress: progress }),
   setCurrentSceneIndex: (index) => set({ currentSceneIndex: index }),
   toggleSeverityFilter: (severity) =>
     set((state) => {
@@ -99,6 +112,7 @@ export const useProjectStore = create<ProjectState>((set) => ({
       analysisStatus: "pending",
       scenes: [],
       issues: [],
+      transcriptionProgress: null,
       currentSceneIndex: 0,
       filterSeverity: new Set(["critical", "warning", "info"]),
     }),

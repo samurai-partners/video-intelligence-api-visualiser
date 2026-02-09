@@ -73,8 +73,15 @@ export interface VIRawResult {
   }>;
 }
 
-export async function analyzeVideo(videoBuffer: Buffer): Promise<VIRawResult> {
+const LANG_TO_BCP47: Record<string, string> = {
+  ja: "ja-JP", en: "en-US", zh: "zh-CN", ko: "ko-KR", ar: "ar-SA",
+  es: "es-ES", fr: "fr-FR", de: "de-DE", pt: "pt-BR",
+  hi: "hi-IN", th: "th-TH", vi: "vi-VN", id: "id-ID",
+};
+
+export async function analyzeVideo(videoBuffer: Buffer, language: string = "ja"): Promise<VIRawResult> {
   const inputContent = videoBuffer.toString("base64");
+  const languageCode = LANG_TO_BCP47[language] || "ja-JP";
 
   const request = {
     inputContent,
@@ -91,7 +98,7 @@ export async function analyzeVideo(videoBuffer: Buffer): Promise<VIRawResult> {
     ],
     videoContext: {
       speechTranscriptionConfig: {
-        languageCode: "ja-JP",
+        languageCode,
         enableAutomaticPunctuation: true,
         enableWordTimeOffsets: true,
       },
@@ -412,10 +419,25 @@ export function segmentIntoScenes(viResult: VIRawResult, videoDuration: number):
  */
 export function applyGeminiTranscription(
   scenes: Scene[],
-  transcription: { words: Array<{ word: string; startSeconds: number; endSeconds: number }>; fullTranscript: string }
+  transcription: {
+    words: Array<{ word: string; startSeconds: number; endSeconds: number }>;
+    fullTranscript: string;
+    detectedLanguage?: string;
+    translatedTranscript?: string;
+    translatedWords?: Array<{ word: string; startSeconds: number; endSeconds: number }>;
+  }
 ): void {
   for (const scene of scenes) {
     const sceneWords: SpeechWord[] = transcription.words
+      .filter((w) => w.startSeconds >= scene.startTimeSeconds && w.startSeconds < scene.endTimeSeconds)
+      .map((w) => ({
+        word: w.word,
+        startTimeSeconds: w.startSeconds,
+        endTimeSeconds: w.endSeconds,
+        confidence: 1.0,
+      }));
+
+    const sceneTranslatedWords: SpeechWord[] = (transcription.translatedWords || [])
       .filter((w) => w.startSeconds >= scene.startTimeSeconds && w.startSeconds < scene.endTimeSeconds)
       .map((w) => ({
         word: w.word,
@@ -428,6 +450,11 @@ export function applyGeminiTranscription(
       scene.geminiTranscription = {
         words: sceneWords,
         fullTranscript: sceneWords.map((w) => w.word).join(""),
+        detectedLanguage: transcription.detectedLanguage,
+        translatedTranscript: sceneTranslatedWords.length > 0
+          ? sceneTranslatedWords.map((w) => w.word).join("")
+          : undefined,
+        translatedWords: sceneTranslatedWords.length > 0 ? sceneTranslatedWords : undefined,
       };
     }
   }

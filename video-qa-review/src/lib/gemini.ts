@@ -1,5 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
-import type { Scene, SceneIssue } from "@/types/scene";
+import type { Scene, SceneIssue, GeminiTranscription } from "@/types/scene";
 import type { Issue, IssueCategory, IssueSeverity } from "@/types/issue";
 import type { ProjectConfig } from "@/types/project";
 import { generateId, TARGET_AUDIENCE_LABELS } from "./utils";
@@ -43,32 +43,53 @@ export async function uploadVideoToGemini(
   return file.uri!;
 }
 
-/**
- * Gemini APIで動画の音声を文字起こしする。
- * ワードレベルのタイムスタンプ付きJSONを返す。
- */
-export async function transcribeWithGemini(
-  videoFileUri: string
-): Promise<{ words: Array<{ word: string; startSeconds: number; endSeconds: number }>; fullTranscript: string }> {
-  const genAI = getGenAI();
-
-  const prompt = `この動画の音声をすべて文字起こししてください。
-
-以下のJSON形式で回答してください:
-{
-  "words": [
-    { "word": "こんにちは", "startSeconds": 0.5, "endSeconds": 1.2 },
-    { "word": "今日は", "startSeconds": 1.3, "endSeconds": 1.8 }
-  ],
-  "fullTranscript": "こんにちは今日は..."
+export interface GeminiTranscriptionResult {
+  words: Array<{ word: string; startSeconds: number; endSeconds: number }>;
+  fullTranscript: string;
+  detectedLanguage: string;
+  translatedTranscript: string;
+  translatedWords: Array<{ word: string; startSeconds: number; endSeconds: number }>;
 }
 
-重要なルール:
-- 日本語は形態素（意味のある最小単位）ごとに分割してください（例: "今日は" "天気が" "いいですね"）
-- 各ワードにstartSecondsとendSecondsを秒単位で付けてください
-- BGMや効果音は無視し、発話内容のみをテキスト化してください
-- 音声がない場合は words を空配列、fullTranscript を空文字列にしてください
-- 全ての発話を漏れなく文字起こししてください`;
+/**
+ * Gemini APIで動画の音声を文字起こしする。
+ * 多言語対応 + 日本語翻訳付き。
+ */
+export async function transcribeWithGemini(
+  videoFileUri: string,
+  translateTo: string = "ja"
+): Promise<GeminiTranscriptionResult> {
+  const genAI = getGenAI();
+
+  const prompt = `Transcribe ALL speech in this video. The video may contain multiple languages.
+
+Return JSON in this exact format:
+{
+  "detectedLanguage": "the primary language detected (ISO 639-1 code, e.g. ja, en, ar, zh)",
+  "words": [
+    { "word": "Hello", "startSeconds": 0.5, "endSeconds": 1.2 },
+    { "word": "world", "startSeconds": 1.3, "endSeconds": 1.8 }
+  ],
+  "fullTranscript": "Hello world...",
+  "translatedTranscript": "こんにちは世界...",
+  "translatedWords": [
+    { "word": "こんにちは", "startSeconds": 0.5, "endSeconds": 1.2 },
+    { "word": "世界", "startSeconds": 1.3, "endSeconds": 1.8 }
+  ]
+}
+
+Rules:
+- Transcribe in the ORIGINAL language as spoken
+- For Japanese, split into morphemes (意味のある最小単位, e.g. "今日は" "天気が" "いいですね")
+- For English and other space-separated languages, split by word
+- For Arabic/Chinese/etc, split into natural phrase units
+- Each word MUST have startSeconds and endSeconds timestamps in seconds
+- Ignore BGM and sound effects — only transcribe human speech
+- If no speech is detected, set words to empty array and fullTranscript to empty string
+- translatedTranscript: translate fullTranscript into ${translateTo === "ja" ? "Japanese (日本語)" : translateTo}
+- translatedWords: translate each word/phrase, keeping the SAME timestamps as the original
+- If the original language is already ${translateTo === "ja" ? "Japanese" : translateTo}, set translatedTranscript and translatedWords to empty
+- Transcribe ALL speech completely — do not skip any part`;
 
   const response = await genAI.models.generateContent({
     model: "gemini-2.0-flash",
@@ -86,8 +107,10 @@ export async function transcribeWithGemini(
     },
   });
 
-  const text = response.text || "{}";
+  return parseTranscriptionResponse(response.text || "{}");
+}
 
+function parseTranscriptionResponse(text: string): GeminiTranscriptionResult {
   try {
     const parsed = JSON.parse(text);
     const words = (parsed.words || []).map((w: any) => ({
@@ -95,13 +118,189 @@ export async function transcribeWithGemini(
       startSeconds: typeof w.startSeconds === "number" ? w.startSeconds : 0,
       endSeconds: typeof w.endSeconds === "number" ? w.endSeconds : 0,
     }));
+    const translatedWords = (parsed.translatedWords || []).map((w: any) => ({
+      word: String(w.word || ""),
+      startSeconds: typeof w.startSeconds === "number" ? w.startSeconds : 0,
+      endSeconds: typeof w.endSeconds === "number" ? w.endSeconds : 0,
+    }));
     return {
       words,
-      fullTranscript: parsed.fullTranscript || words.map((w: any) => w.word).join(""),
+      fullTranscript: parsed.fullTranscript || words.map((w: { word: string }) => w.word).join(""),
+      detectedLanguage: parsed.detectedLanguage || "unknown",
+      translatedTranscript: parsed.translatedTranscript || "",
+      translatedWords,
     };
   } catch {
-    return { words: [], fullTranscript: "" };
+    return { words: [], fullTranscript: "", detectedLanguage: "unknown", translatedTranscript: "", translatedWords: [] };
   }
+}
+
+export interface ChunkSceneInput {
+  sceneIndex: number;
+  startTimeSeconds: number;
+  endTimeSeconds: number;
+}
+
+export interface ChunkTranscriptionResult {
+  scenes: Array<{
+    sceneIndex: number;
+    words: Array<{ word: string; startSeconds: number; endSeconds: number }>;
+    fullTranscript: string;
+    detectedLanguage: string;
+    translatedTranscript: string;
+    translatedWords: Array<{ word: string; startSeconds: number; endSeconds: number }>;
+  }>;
+}
+
+/**
+ * チャンク（60秒程度）内の複数シーンをまとめて1回のAPIコールで文字起こし。
+ * シーン境界をプロンプトで明示し、Geminiがシーンごとに分けたJSONで返す。
+ */
+export async function transcribeChunkWithGemini(
+  videoFileUri: string,
+  chunkScenes: ChunkSceneInput[],
+  translateTo: string = "ja"
+): Promise<ChunkTranscriptionResult> {
+  const genAI = getGenAI();
+
+  const chunkStart = chunkScenes[0].startTimeSeconds.toFixed(1);
+  const chunkEnd = chunkScenes[chunkScenes.length - 1].endTimeSeconds.toFixed(1);
+
+  const sceneBoundaries = chunkScenes
+    .map((s) => `- Scene ${s.sceneIndex}: ${s.startTimeSeconds.toFixed(1)}s - ${s.endTimeSeconds.toFixed(1)}s`)
+    .join("\n");
+
+  const prompt = `Transcribe ALL speech in this video between ${chunkStart}s and ${chunkEnd}s.
+Split the transcription by the following scene boundaries:
+${sceneBoundaries}
+
+Return JSON in this exact format:
+{
+  "scenes": [
+    {
+      "sceneIndex": 0,
+      "detectedLanguage": "ja",
+      "words": [
+        { "word": "こんにちは", "startSeconds": 0.5, "endSeconds": 1.2 }
+      ],
+      "fullTranscript": "こんにちは...",
+      "translatedTranscript": "",
+      "translatedWords": []
+    }
+  ]
+}
+
+Rules:
+- Return one entry per scene listed above, in the same order
+- Each scene's words must only contain speech that occurs within that scene's time range
+- Transcribe in the ORIGINAL language as spoken
+- For Japanese, split into morphemes (意味のある最小単位, e.g. "今日は" "天気が" "いいですね")
+- For English and other space-separated languages, split by word
+- Each word MUST have accurate startSeconds and endSeconds timestamps
+- Ignore BGM and sound effects — only transcribe human speech
+- If no speech in a scene, set its words to empty array and fullTranscript to empty string
+- translatedTranscript: translate into ${translateTo === "ja" ? "Japanese (日本語)" : translateTo}
+- translatedWords: translate each word/phrase, keeping the SAME timestamps
+- If the original language is already ${translateTo === "ja" ? "Japanese" : translateTo}, set translatedTranscript and translatedWords to empty
+- You MUST include ALL ${chunkScenes.length} scenes in your response`;
+
+  const response = await genAI.models.generateContent({
+    model: "gemini-2.5-flash",
+    contents: [
+      {
+        role: "user" as const,
+        parts: [
+          { fileData: { fileUri: videoFileUri, mimeType: "video/mp4" } },
+          { text: prompt },
+        ],
+      },
+    ],
+    config: {
+      responseMimeType: "application/json",
+      maxOutputTokens: 65536,
+    },
+  });
+
+  return parseChunkTranscriptionResponse(response.text || "{}", chunkScenes);
+}
+
+function parseChunkTranscriptionResponse(text: string, chunkScenes: ChunkSceneInput[]): ChunkTranscriptionResult {
+  try {
+    const parsed = JSON.parse(text);
+    const rawScenes = parsed.scenes || [];
+
+    const scenes = chunkScenes.map((input) => {
+      const match = rawScenes.find((s: any) => s.sceneIndex === input.sceneIndex);
+      if (!match) {
+        return {
+          sceneIndex: input.sceneIndex,
+          words: [],
+          fullTranscript: "",
+          detectedLanguage: "unknown",
+          translatedTranscript: "",
+          translatedWords: [],
+        };
+      }
+      const words = (match.words || []).map((w: any) => ({
+        word: String(w.word || ""),
+        startSeconds: typeof w.startSeconds === "number" ? w.startSeconds : 0,
+        endSeconds: typeof w.endSeconds === "number" ? w.endSeconds : 0,
+      }));
+      const translatedWords = (match.translatedWords || []).map((w: any) => ({
+        word: String(w.word || ""),
+        startSeconds: typeof w.startSeconds === "number" ? w.startSeconds : 0,
+        endSeconds: typeof w.endSeconds === "number" ? w.endSeconds : 0,
+      }));
+      return {
+        sceneIndex: input.sceneIndex,
+        words,
+        fullTranscript: match.fullTranscript || words.map((w: { word: string }) => w.word).join(""),
+        detectedLanguage: match.detectedLanguage || "unknown",
+        translatedTranscript: match.translatedTranscript || "",
+        translatedWords,
+      };
+    });
+
+    return { scenes };
+  } catch {
+    return {
+      scenes: chunkScenes.map((input) => ({
+        sceneIndex: input.sceneIndex,
+        words: [],
+        fullTranscript: "",
+        detectedLanguage: "unknown",
+        translatedTranscript: "",
+        translatedWords: [],
+      })),
+    };
+  }
+}
+
+/**
+ * シーンを60秒以内のチャンクにグループ化。
+ * シーン境界を尊重し、60秒を超えない範囲でシーンを足し算してまとめる。
+ */
+export function createTimeChunks(scenes: ChunkSceneInput[], maxChunkSeconds: number = 60): ChunkSceneInput[][] {
+  const chunks: ChunkSceneInput[][] = [];
+  let currentChunk: ChunkSceneInput[] = [];
+  let chunkStartTime = 0;
+
+  for (const scene of scenes) {
+    if (currentChunk.length === 0) {
+      chunkStartTime = scene.startTimeSeconds;
+      currentChunk.push(scene);
+    } else if (scene.endTimeSeconds - chunkStartTime <= maxChunkSeconds) {
+      currentChunk.push(scene);
+    } else {
+      chunks.push(currentChunk);
+      currentChunk = [scene];
+      chunkStartTime = scene.startTimeSeconds;
+    }
+  }
+  if (currentChunk.length > 0) {
+    chunks.push(currentChunk);
+  }
+  return chunks;
 }
 
 function buildSystemPrompt(): string {

@@ -10,6 +10,94 @@ import Link from "next/link";
 import type { Scene } from "@/types/scene";
 import type { Issue } from "@/types/issue";
 
+type ImportStep = "idle" | "importing_parse" | "importing_upload" | "importing_transcribe" | "done";
+
+const IMPORT_STEP_LABELS: Record<ImportStep, string> = {
+  idle: "テストデータで表示",
+  importing_parse: "JSONパース中...",
+  importing_upload: "Geminiにアップロード中...",
+  importing_transcribe: "Gemini文字起こし中...",
+  done: "完了",
+};
+
+/**
+ * SSEリーダーをコンポーネント外で実行する。
+ * router.push()後にコンポーネントがアンマウントされてもSSE読み取りを継続するため。
+ */
+function readImportSSEInBackground(reader: ReadableStreamDefaultReader<Uint8Array>) {
+  const decoder = new TextDecoder();
+  let buffer = "";
+  const store = useProjectStore.getState();
+
+  console.log("[BG-SSE] Background reader started");
+  (async () => {
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          console.log("[BG-SSE] Stream ended (done=true)");
+          break;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          const dataLine = line.split("\n").find((l) => l.startsWith("data: "));
+          if (!dataLine) continue;
+
+          try {
+            const payload = JSON.parse(dataLine.slice(6));
+            console.log("[BG-SSE] Received event:", payload.type);
+
+            if (payload.type === "transcription_scene") {
+              const { sceneIndex, geminiTranscription, completedScenes, totalScenes } = payload.data;
+              const store = useProjectStore.getState();
+              if (geminiTranscription) {
+                store.updateScenesTranscription([{
+                  index: sceneIndex,
+                  geminiTranscription,
+                }]);
+              }
+              store.setTranscriptionProgress({ completed: completedScenes, total: totalScenes });
+              console.log(`[BG-SSE] Scene ${sceneIndex + 1}: ${completedScenes}/${totalScenes}`);
+            } else if (payload.type === "result") {
+              const scenes = payload.data.scenes as Scene[];
+              const geminiCount = scenes.filter((s) => s.geminiTranscription?.words?.length).length;
+              console.log(`[BG-SSE] Result: ${scenes.length} scenes, ${geminiCount} with Gemini transcription`);
+              useProjectStore.getState().setScenes(scenes);
+              useProjectStore.getState().setTranscriptionProgress(null);
+              useProjectStore.getState().setAnalysisStatus("completed");
+            } else if (payload.type === "log") {
+              console.log(`[BG-SSE] Log [${payload.data.level}]: ${payload.data.message}`);
+            } else if (payload.type === "error") {
+              console.error("[BG-SSE] Error:", payload.data.message);
+              useProjectStore.getState().setTranscriptionProgress(null);
+              useProjectStore.getState().setAnalysisStatus("completed");
+            }
+          } catch {
+            // ignore parse errors
+          }
+        }
+      }
+    } catch (err) {
+      // SSE connection closed — set completed if still importing
+      const status = useProjectStore.getState().analysisStatus;
+      if (status === "importing_transcribe" || status === "importing_upload") {
+        useProjectStore.getState().setAnalysisStatus("completed");
+      }
+      console.warn("[BG-SSE] Background reader ended:", err);
+    }
+    // Ensure status is completed when stream ends normally
+    const finalStatus = useProjectStore.getState().analysisStatus;
+    if (finalStatus !== "completed") {
+      console.log("[BG-SSE] Stream ended but status was", finalStatus, "→ setting completed");
+      useProjectStore.getState().setAnalysisStatus("completed");
+    }
+  })();
+}
+
 export default function NewProjectPage() {
   const router = useRouter();
   const draftVideo = useProjectStore((s) => s.draftVideo);
@@ -25,13 +113,13 @@ export default function NewProjectPage() {
   // Test data import
   const [testVideo, setTestVideo] = useState<File | null>(null);
   const [testJson, setTestJson] = useState<File | null>(null);
-  const [importing, setImporting] = useState(false);
+  const [importStep, setImportStep] = useState<ImportStep>("idle");
   const videoInputRef = useRef<HTMLInputElement>(null);
   const jsonInputRef = useRef<HTMLInputElement>(null);
 
   const handleImportTest = async () => {
     if (!testVideo || !testJson) return;
-    setImporting(true);
+    setImportStep("importing_parse");
 
     try {
       // Get video duration
@@ -62,11 +150,11 @@ export default function NewProjectPage() {
       });
       store.setVideoFile(testVideo);
 
-      // Send JSON to server for parsing
+      // Send JSON + video to server via SSE
       const formData = new FormData();
       formData.append("json", testJson);
+      formData.append("video", testVideo);
       formData.append("duration", String(duration));
-      formData.append("config", JSON.stringify(store.draftConfig));
 
       const response = await fetch("/api/import-json", {
         method: "POST",
@@ -74,22 +162,72 @@ export default function NewProjectPage() {
       });
 
       if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.error || `HTTP ${response.status}`);
+        throw new Error(`HTTP ${response.status}`);
       }
 
-      const { scenes, issues } = await response.json() as { scenes: Scene[]; issues: Issue[] };
+      // Read SSE stream — wait for scenes_ready, then hand off to background
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error("No response body");
 
-      store.setScenes(scenes);
-      store.setIssues(issues);
-      store.setAnalysisStatus("completed");
-
+      const decoder = new TextDecoder();
+      let buffer = "";
       const projectId = generateId();
-      router.push(`/projects/${projectId}`);
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n\n");
+        buffer = lines.pop() || "";
+
+        let shouldBreak = false;
+        for (const line of lines) {
+          const dataLine = line.split("\n").find((l) => l.startsWith("data: "));
+          if (!dataLine) continue;
+
+          try {
+            const payload = JSON.parse(dataLine.slice(6));
+
+            if (payload.type === "status") {
+              const status = payload.data.status as ImportStep;
+              if (status in IMPORT_STEP_LABELS) {
+                setImportStep(status);
+              }
+            } else if (payload.type === "scenes_ready") {
+              // VI data ready — set store, hand off reader, navigate
+              const scenes = payload.data.scenes as Scene[];
+              const issues = payload.data.issues as Issue[];
+              store.setScenes(scenes);
+              store.setIssues(issues);
+              store.setAnalysisStatus("importing_transcribe");
+
+              // Hand off remaining SSE to background reader (survives navigation)
+              readImportSSEInBackground(reader);
+              router.push(`/projects/${projectId}`);
+              shouldBreak = true;
+              break;
+            } else if (payload.type === "result") {
+              // No Gemini — got result directly
+              const scenes = payload.data.scenes as Scene[];
+              store.setScenes(scenes);
+              store.setAnalysisStatus("completed");
+              router.push(`/projects/${projectId}`);
+              shouldBreak = true;
+              break;
+            } else if (payload.type === "error") {
+              throw new Error(payload.data.message);
+            }
+          } catch (e) {
+            if (e instanceof SyntaxError) continue;
+            throw e;
+          }
+        }
+        if (shouldBreak) break;
+      }
     } catch (err) {
       alert(`インポート失敗: ${err instanceof Error ? err.message : "不明なエラー"}`);
-    } finally {
-      setImporting(false);
+      setImportStep("idle");
     }
   };
 
@@ -185,10 +323,10 @@ export default function NewProjectPage() {
 
             <button
               onClick={handleImportTest}
-              disabled={!testVideo || !testJson || importing}
+              disabled={!testVideo || !testJson || importStep !== "idle"}
               className="w-full py-2 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              {importing ? "読み込み中..." : "テストデータで表示"}
+              {IMPORT_STEP_LABELS[importStep]}
             </button>
           </div>
         </section>

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useMemo } from "react";
 import type { Scene } from "@/types/scene";
+import { useProjectStore } from "@/stores/useProjectStore";
 import { formatTime, SEVERITY_LABELS, CATEGORY_LABELS, groupWordsIntoSentences } from "@/lib/utils";
 
 interface SceneDetailPanelProps {
@@ -12,11 +13,23 @@ interface SceneDetailPanelProps {
 
 type Tab = "text" | "speech" | "labels" | "objects" | "persons" | "faces" | "logos" | "issues";
 
+const LANG_LABELS: Record<string, string> = {
+  ja: "日本語", en: "英語", zh: "中国語", ko: "韓国語", ar: "アラビア語",
+  es: "スペイン語", fr: "フランス語", de: "ドイツ語", pt: "ポルトガル語",
+  hi: "ヒンディー語", th: "タイ語", vi: "ベトナム語", id: "インドネシア語",
+};
+
 export function SceneDetailPanel({ scene, currentTime = 0, onTimestampClick }: SceneDetailPanelProps) {
   const [activeTab, setActiveTab] = useState<Tab>("issues");
+  const [showTranslation, setShowTranslation] = useState(false);
   const activeSentenceRef = useRef<HTMLDivElement>(null);
+  const analysisStatus = useProjectStore((s) => s.analysisStatus);
 
   const speechSource = scene?.geminiTranscription?.words?.length ? "gemini" : "vi";
+  const isTranscribing = speechSource === "vi" && analysisStatus === "importing_transcribe";
+  const hasTranslation = !!(scene?.geminiTranscription?.translatedWords?.length);
+  const detectedLang = scene?.geminiTranscription?.detectedLanguage;
+
   const sentences = useMemo(
     () => {
       if (!scene) return [];
@@ -24,6 +37,14 @@ export function SceneDetailPanel({ scene, currentTime = 0, onTimestampClick }: S
         ? scene.geminiTranscription.words
         : scene.viData.speechTranscription;
       return groupWordsIntoSentences(words);
+    },
+    [scene]
+  );
+
+  const translatedSentences = useMemo(
+    () => {
+      if (!scene?.geminiTranscription?.translatedWords?.length) return [];
+      return groupWordsIntoSentences(scene.geminiTranscription.translatedWords);
     },
     [scene]
   );
@@ -189,6 +210,39 @@ export function SceneDetailPanel({ scene, currentTime = 0, onTimestampClick }: S
 
         {activeTab === "speech" && (
           <div className="space-y-3">
+            {/* Language badge + translation toggle */}
+            {(detectedLang || hasTranslation) && (
+              <div className="flex items-center gap-2 px-2">
+                {detectedLang && detectedLang !== "unknown" && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-medium">
+                    {LANG_LABELS[detectedLang] || detectedLang}
+                  </span>
+                )}
+                {hasTranslation && (
+                  <button
+                    onClick={() => setShowTranslation(!showTranslation)}
+                    className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium transition-colors ${
+                      showTranslation
+                        ? "bg-green-100 text-green-700"
+                        : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                    }`}
+                  >
+                    {showTranslation ? "翻訳ON" : "翻訳OFF"}
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Gemini transcription in progress indicator */}
+            {isTranscribing && (
+              <div className="flex items-center gap-2 px-3 py-2 bg-purple-50 rounded-lg border border-purple-200">
+                <span className="inline-block w-2 h-2 bg-purple-500 rounded-full animate-pulse" />
+                <span className="text-xs text-purple-700 font-medium">
+                  Gemini高品質文字起こし中... 完了次第自動更新
+                </span>
+              </div>
+            )}
+
             {/* Gemini speech summary */}
             {scene.geminiAnalysis?.speechSummary && (
               <div className="p-3 bg-purple-50 rounded-lg border border-purple-200">
@@ -199,9 +253,26 @@ export function SceneDetailPanel({ scene, currentTime = 0, onTimestampClick }: S
               </div>
             )}
 
+            {/* Translated transcript summary */}
+            {showTranslation && scene.geminiTranscription?.translatedTranscript && (
+              <div className="p-3 bg-green-50 rounded-lg border border-green-200">
+                <h4 className="text-xs font-medium text-green-700 mb-1">日本語翻訳</h4>
+                <p className="text-sm text-gray-800 whitespace-pre-line leading-relaxed">
+                  {scene.geminiTranscription.translatedTranscript}
+                </p>
+              </div>
+            )}
+
             {/* Word-level speech (Gemini or VI API) */}
             {sentences.length === 0 && !scene.viData.fullTranscript && !scene.geminiAnalysis?.speechSummary ? (
-              <p className="text-sm text-gray-400 text-center py-4">音声なし</p>
+              <div className="text-center py-4">
+                <p className="text-sm text-gray-400">
+                  このシーン（{formatTime(scene.startTimeSeconds)}〜{formatTime(scene.endTimeSeconds)}）に音声データはありません
+                </p>
+                {isTranscribing && (
+                  <p className="text-xs text-purple-500 mt-1">Gemini文字起こし完了後に表示される可能性があります</p>
+                )}
+              </div>
             ) : sentences.length > 0 ? (
               <>
               <h4 className="text-xs font-medium text-gray-400 px-2">
@@ -212,34 +283,56 @@ export function SceneDetailPanel({ scene, currentTime = 0, onTimestampClick }: S
                   currentTime >= sentence.startTimeSeconds && currentTime < sentence.endTimeSeconds;
 
                 return (
-                  <p
-                    key={si}
-                    ref={isActiveSentence ? activeSentenceRef : undefined}
-                    className={`rounded px-3 py-1.5 text-sm leading-relaxed transition-colors ${
-                      isActiveSentence
-                        ? "border-2 border-blue-500 bg-blue-50"
-                        : "border-2 border-transparent"
-                    }`}
-                  >
-                    {sentence.words.map((w, wi) => {
-                      const isActiveWord =
-                        currentTime >= w.startTimeSeconds &&
-                        currentTime < w.endTimeSeconds;
-                      return (
-                        <span
-                          key={wi}
-                          onClick={() => onTimestampClick?.(w.startTimeSeconds)}
-                          className={`cursor-pointer hover:bg-blue-100 ${
-                            isActiveWord
-                              ? "border-b-[3px] border-red-500 text-gray-900"
-                              : "text-gray-700"
-                          }`}
-                        >
-                          {w.word}
-                        </span>
-                      );
-                    })}
-                  </p>
+                  <div key={si}>
+                    <p
+                      ref={isActiveSentence ? activeSentenceRef : undefined}
+                      className={`rounded px-3 py-1.5 text-sm leading-relaxed transition-colors ${
+                        isActiveSentence
+                          ? "border-2 border-blue-500 bg-blue-50"
+                          : "border-2 border-transparent"
+                      }`}
+                    >
+                      {sentence.words.map((w, wi) => {
+                        const isActiveWord =
+                          currentTime >= w.startTimeSeconds &&
+                          currentTime < w.endTimeSeconds;
+                        return (
+                          <span
+                            key={wi}
+                            onClick={() => onTimestampClick?.(w.startTimeSeconds)}
+                            className={`cursor-pointer hover:bg-blue-100 ${
+                              isActiveWord
+                                ? "border-b-[3px] border-red-500 text-gray-900"
+                                : "text-gray-700"
+                            }`}
+                          >
+                            {w.word}
+                          </span>
+                        );
+                      })}
+                    </p>
+                    {/* Inline translation for this sentence */}
+                    {showTranslation && translatedSentences[si] && (
+                      <p className="px-3 py-1 text-xs text-green-700 bg-green-50/50 rounded">
+                        {translatedSentences[si].words.map((w, wi) => {
+                          const isActiveWord =
+                            currentTime >= w.startTimeSeconds &&
+                            currentTime < w.endTimeSeconds;
+                          return (
+                            <span
+                              key={wi}
+                              onClick={() => onTimestampClick?.(w.startTimeSeconds)}
+                              className={`cursor-pointer hover:bg-green-100 ${
+                                isActiveWord ? "border-b-2 border-green-500 font-medium" : ""
+                              }`}
+                            >
+                              {w.word}
+                            </span>
+                          );
+                        })}
+                      </p>
+                    )}
+                  </div>
                 );
               })}
               </>
