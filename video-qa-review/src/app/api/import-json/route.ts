@@ -1,8 +1,9 @@
 import { NextRequest } from "next/server";
 import { segmentIntoScenes } from "@/lib/videoIntelligence";
 import { parseVIJson } from "@/lib/parseVIJson";
-import { uploadVideoToGemini, transcribeChunkWithGemini, createTimeChunks } from "@/lib/gemini";
+import { transcribeChunkWithGemini, createTimeChunks } from "@/lib/gemini";
 import type { ChunkSceneInput } from "@/lib/gemini";
+import { splitVideoIntoChunks } from "@/lib/ffmpeg";
 import type { Issue } from "@/types/issue";
 
 export const maxDuration = 300;
@@ -64,20 +65,12 @@ export async function POST(request: NextRequest) {
         // Send scenes immediately (VI data only) — frontend navigates here
         sendEvent("scenes_ready", { scenes, issues: [] as Issue[] });
 
-        // Step 2: Gemini transcription (per-scene)
+        // Step 2: Gemini transcription (ffmpeg chunk-based)
         if (videoFile && process.env.GEMINI_API_KEY) {
           try {
-            // Upload video to Gemini (once)
-            sendStatus("importing_upload");
-            sendLog("info", "Gemini Files API に動画をアップロード中...");
             const videoBuffer = Buffer.from(await videoFile.arrayBuffer());
-            const videoFileUri = await uploadVideoToGemini(videoBuffer);
-            sendLog("success", "動画アップロード完了");
 
-            // Chunk-based transcription (group scenes into ~60s chunks)
-            sendStatus("importing_transcribe");
-            const CONCURRENCY = 5;
-
+            // Group scenes into ~60s chunks
             const chunkInputs: ChunkSceneInput[] = scenes.map((s) => ({
               sceneIndex: s.index,
               startTimeSeconds: s.startTimeSeconds,
@@ -85,16 +78,31 @@ export async function POST(request: NextRequest) {
             }));
             const chunks = createTimeChunks(chunkInputs);
 
-            sendLog("info", `Gemini文字起こし開始: ${scenes.length}シーン → ${chunks.length}チャンク (${CONCURRENCY}並列)`);
+            // Cut video into chunks with ffmpeg
+            sendStatus("importing_upload");
+            sendLog("info", `ffmpegで動画を${chunks.length}チャンクに切り出し中...`);
+
+            const chunkRanges = chunks.map((chunk) => ({
+              startSeconds: chunk[0].startTimeSeconds,
+              endSeconds: chunk[chunk.length - 1].endTimeSeconds,
+            }));
+            const chunkBuffers = await splitVideoIntoChunks(videoBuffer, chunkRanges);
+            sendLog("success", `動画切り出し完了: ${chunkBuffers.map((b) => `${(b.length / 1024 / 1024).toFixed(1)}MB`).join(", ")}`);
+
+            // Transcribe all chunks in parallel
+            sendStatus("importing_transcribe");
+            const CONCURRENCY = chunks.length;
+            sendLog("info", `Gemini文字起こし開始: ${scenes.length}シーン → ${chunks.length}チャンク (全${CONCURRENCY}並列)`);
             let completedScenes = 0;
 
-            async function processChunk(chunk: ChunkSceneInput[], chunkIndex: number) {
+            async function processChunk(chunk: ChunkSceneInput[], chunkIndex: number, chunkBuffer: Buffer) {
+              const chunkOffset = chunk[0].startTimeSeconds;
               const chunkStart = chunk[0].startTimeSeconds.toFixed(1);
               const chunkEnd = chunk[chunk.length - 1].endTimeSeconds.toFixed(1);
-              const label = `チャンク${chunkIndex + 1} (${chunkStart}s〜${chunkEnd}s, ${chunk.length}シーン)`;
+              const label = `チャンク${chunkIndex + 1} (${chunkStart}s〜${chunkEnd}s, ${chunk.length}シーン, ${(chunkBuffer.length / 1024 / 1024).toFixed(1)}MB)`;
 
               try {
-                const result = await transcribeChunkWithGemini(videoFileUri, chunk, "ja");
+                const result = await transcribeChunkWithGemini(chunkBuffer, chunk, chunkOffset, "ja");
 
                 // Apply results to scenes and send events
                 for (const sceneResult of result.scenes) {
@@ -140,7 +148,7 @@ export async function POST(request: NextRequest) {
                   sendLog("warn", `${label}: レート制限 — 5秒待機してリトライ`);
                   await new Promise((r) => setTimeout(r, 5000));
                   try {
-                    const retry = await transcribeChunkWithGemini(videoFileUri, chunk, "ja");
+                    const retry = await transcribeChunkWithGemini(chunkBuffer, chunk, chunkOffset, "ja");
                     for (const sceneResult of retry.scenes) {
                       const scene = scenes.find((s) => s.index === sceneResult.sceneIndex);
                       if (!scene) continue;
@@ -176,7 +184,6 @@ export async function POST(request: NextRequest) {
                       });
                     }
                   } catch {
-                    // Mark all scenes in this chunk as failed
                     for (const input of chunk) {
                       completedScenes++;
                       sendEvent("transcription_scene", {
@@ -189,7 +196,6 @@ export async function POST(request: NextRequest) {
                     sendLog("error", `${label}: リトライ失敗`);
                   }
                 } else {
-                  // Mark all scenes in this chunk as failed
                   for (const input of chunk) {
                     completedScenes++;
                     sendEvent("transcription_scene", {
@@ -207,7 +213,7 @@ export async function POST(request: NextRequest) {
             // Parallel window: up to CONCURRENCY chunks at once
             const pending = new Set<Promise<void>>();
             for (let i = 0; i < chunks.length; i++) {
-              const p = processChunk(chunks[i], i).then(() => { pending.delete(p); });
+              const p = processChunk(chunks[i], i, chunkBuffers[i]).then(() => { pending.delete(p); });
               pending.add(p);
               if (pending.size >= CONCURRENCY) {
                 await Promise.race(pending);
@@ -217,7 +223,6 @@ export async function POST(request: NextRequest) {
 
             sendLog("success", `Gemini文字起こし完了: ${scenes.filter((s) => s.geminiTranscription).length}/${scenes.length}シーンに反映`);
           } catch (err) {
-            // Upload failure — whole transcription skipped
             const msg = err instanceof Error ? err.message : "不明なエラー";
             sendLog("error", `Gemini文字起こし失敗: ${msg}`);
           }

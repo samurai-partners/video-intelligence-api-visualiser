@@ -153,24 +153,33 @@ export interface ChunkTranscriptionResult {
 }
 
 /**
- * チャンク（60秒程度）内の複数シーンをまとめて1回のAPIコールで文字起こし。
- * シーン境界をプロンプトで明示し、Geminiがシーンごとに分けたJSONで返す。
+ * ffmpegで切り出したチャンク動画をGeminiにアップロードし、文字起こし。
+ * チャンク内のシーン境界を相対時間(0秒始まり)で指示し、
+ * 返ってきたタイムスタンプにオフセットを加算して元の動画時間に変換する。
  */
 export async function transcribeChunkWithGemini(
-  videoFileUri: string,
+  chunkVideoBuffer: Buffer,
   chunkScenes: ChunkSceneInput[],
+  chunkOffsetSeconds: number,
   translateTo: string = "ja"
 ): Promise<ChunkTranscriptionResult> {
   const genAI = getGenAI();
 
-  const chunkStart = chunkScenes[0].startTimeSeconds.toFixed(1);
-  const chunkEnd = chunkScenes[chunkScenes.length - 1].endTimeSeconds.toFixed(1);
+  // Upload chunk to Gemini Files API
+  const videoFileUri = await uploadVideoToGemini(chunkVideoBuffer);
 
+  // Scene boundaries in relative time (0-based within chunk)
   const sceneBoundaries = chunkScenes
-    .map((s) => `- Scene ${s.sceneIndex}: ${s.startTimeSeconds.toFixed(1)}s - ${s.endTimeSeconds.toFixed(1)}s`)
+    .map((s) => {
+      const relStart = (s.startTimeSeconds - chunkOffsetSeconds).toFixed(1);
+      const relEnd = (s.endTimeSeconds - chunkOffsetSeconds).toFixed(1);
+      return `- Scene ${s.sceneIndex}: ${relStart}s - ${relEnd}s`;
+    })
     .join("\n");
 
-  const prompt = `Transcribe ALL speech in this video between ${chunkStart}s and ${chunkEnd}s.
+  const chunkDuration = (chunkScenes[chunkScenes.length - 1].endTimeSeconds - chunkOffsetSeconds).toFixed(1);
+
+  const prompt = `Transcribe ALL speech in this video (0s to ${chunkDuration}s).
 Split the transcription by the following scene boundaries:
 ${sceneBoundaries}
 
@@ -196,7 +205,7 @@ Rules:
 - Transcribe in the ORIGINAL language as spoken
 - For Japanese, split into morphemes (意味のある最小単位, e.g. "今日は" "天気が" "いいですね")
 - For English and other space-separated languages, split by word
-- Each word MUST have accurate startSeconds and endSeconds timestamps
+- Each word MUST have accurate startSeconds and endSeconds timestamps (relative to this video clip, starting from 0)
 - Ignore BGM and sound effects — only transcribe human speech
 - If no speech in a scene, set its words to empty array and fullTranscript to empty string
 - translatedTranscript: translate into ${translateTo === "ja" ? "Japanese (日本語)" : translateTo}
@@ -221,10 +230,10 @@ Rules:
     },
   });
 
-  return parseChunkTranscriptionResponse(response.text || "{}", chunkScenes);
+  return parseChunkTranscriptionResponse(response.text || "{}", chunkScenes, chunkOffsetSeconds);
 }
 
-function parseChunkTranscriptionResponse(text: string, chunkScenes: ChunkSceneInput[]): ChunkTranscriptionResult {
+function parseChunkTranscriptionResponse(text: string, chunkScenes: ChunkSceneInput[], chunkOffsetSeconds: number): ChunkTranscriptionResult {
   try {
     const parsed = JSON.parse(text);
     const rawScenes = parsed.scenes || [];
@@ -241,15 +250,16 @@ function parseChunkTranscriptionResponse(text: string, chunkScenes: ChunkSceneIn
           translatedWords: [],
         };
       }
+      // Add chunkOffsetSeconds to convert relative timestamps to absolute
       const words = (match.words || []).map((w: any) => ({
         word: String(w.word || ""),
-        startSeconds: typeof w.startSeconds === "number" ? w.startSeconds : 0,
-        endSeconds: typeof w.endSeconds === "number" ? w.endSeconds : 0,
+        startSeconds: (typeof w.startSeconds === "number" ? w.startSeconds : 0) + chunkOffsetSeconds,
+        endSeconds: (typeof w.endSeconds === "number" ? w.endSeconds : 0) + chunkOffsetSeconds,
       }));
       const translatedWords = (match.translatedWords || []).map((w: any) => ({
         word: String(w.word || ""),
-        startSeconds: typeof w.startSeconds === "number" ? w.startSeconds : 0,
-        endSeconds: typeof w.endSeconds === "number" ? w.endSeconds : 0,
+        startSeconds: (typeof w.startSeconds === "number" ? w.startSeconds : 0) + chunkOffsetSeconds,
+        endSeconds: (typeof w.endSeconds === "number" ? w.endSeconds : 0) + chunkOffsetSeconds,
       }));
       return {
         sceneIndex: input.sceneIndex,
