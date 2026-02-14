@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import { useProjectStore } from "@/stores/useProjectStore";
 import { IssueCard } from "./IssueCard";
-import { formatTime } from "@/lib/utils";
+import { formatTime, deduplicateDetectedText } from "@/lib/utils";
 
 interface IssueListProps {
   onIssueClick?: (timestampSeconds: number) => void;
@@ -37,6 +37,7 @@ export function IssueList({ onIssueClick }: IssueListProps) {
   const filterSeverity = useProjectStore((s) => s.filterSeverity);
   const toggleSeverityFilter = useProjectStore((s) => s.toggleSeverityFilter);
   const setCurrentSceneIndex = useProjectStore((s) => s.setCurrentSceneIndex);
+  const analysisStatus = useProjectStore((s) => s.analysisStatus);
 
   const filteredIssues = issues.filter((i) => filterSeverity.has(i.severity));
 
@@ -49,13 +50,16 @@ export function IssueList({ onIssueClick }: IssueListProps) {
     for (const scene of scenes) {
       if (scene.viData.detectedText.length === 0) continue;
       const speech = scene.geminiTranscription?.fullTranscript || "";
-      for (const dt of scene.viData.detectedText) {
+      // Skip scenes where transcription hasn't arrived yet
+      if (!speech) continue;
+      const dedupedTexts = deduplicateDetectedText(scene.viData.detectedText);
+      for (const dt of dedupedTexts) {
         results.push({
           sceneIndex: scene.index,
           startTimeSeconds: scene.startTimeSeconds,
           telopText: dt.text,
           speechText: speech,
-          result: speech ? compareTelopSpeech(dt.text, speech) : "mismatch",
+          result: compareTelopSpeech(dt.text, speech),
         });
       }
     }
@@ -137,6 +141,12 @@ export function IssueList({ onIssueClick }: IssueListProps) {
                 不一致 {mismatchCount}
               </span>
             </div>
+            {analysisStatus === "importing_transcribe" && (
+              <p className="text-[10px] text-purple-500 flex items-center gap-1 mb-1.5">
+                <span className="inline-block w-1.5 h-1.5 bg-purple-500 rounded-full animate-pulse" />
+                文字起こし進行中...
+              </p>
+            )}
           </div>
 
           <div className="space-y-1">

@@ -63,10 +63,14 @@ const ALL_TYPES: Set<DetectionType> = new Set(["person", "face", "object", "logo
 
 export function VideoOverlay({ videoElement, currentTime, scene, enabledTypes = ALL_TYPES }: VideoOverlayProps) {
   const [videoRect, setVideoRect] = useState<VideoRect>({ left: 0, top: 0, width: 0, height: 0 });
+  const rafRef = useRef(0);
 
   const updateRect = useCallback(() => {
     if (!videoElement) return;
-    setVideoRect(computeVideoRect(videoElement));
+    cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(() => {
+      setVideoRect(computeVideoRect(videoElement));
+    });
   }, [videoElement]);
 
   useEffect(() => {
@@ -81,16 +85,15 @@ export function VideoOverlay({ videoElement, currentTime, scene, enabledTypes = 
     }
 
     videoElement.addEventListener("loadedmetadata", updateRect);
+    window.addEventListener("resize", updateRect);
 
     return () => {
+      cancelAnimationFrame(rafRef.current);
       observer.disconnect();
       videoElement.removeEventListener("loadedmetadata", updateRect);
+      window.removeEventListener("resize", updateRect);
     };
   }, [videoElement, updateRect]);
-
-  useEffect(() => {
-    updateRect();
-  }, [currentTime, updateRect]);
 
   // Collect detections for current time
   const detections = useMemo((): Detection[] => {

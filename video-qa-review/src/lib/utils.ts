@@ -19,6 +19,54 @@ export function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
+/**
+ * OCRテキストの重複排除。
+ * - テキスト長の降順でソート（長いものを優先）
+ * - 短いテキストが既存エントリの部分文字列なら除外（"化" ⊂ "元化" → 除外）
+ * - 同一テキストの重複エントリは時間範囲をマージ
+ */
+export function deduplicateDetectedText<
+  T extends { text: string; startTimeSeconds: number; endTimeSeconds: number; confidence: number; frames: unknown[] }
+>(texts: T[]): T[] {
+  if (texts.length <= 1) return texts;
+
+  const sorted = [...texts].sort((a, b) => b.text.length - a.text.length);
+  const result: T[] = [];
+
+  for (const entry of sorted) {
+    const norm = entry.text.replace(/[\s\u3000]/g, "");
+    if (!norm) continue;
+
+    // Skip if this text is a substring of any already-accepted text
+    const isSubstring = result.some((accepted) => {
+      const acceptedNorm = accepted.text.replace(/[\s\u3000]/g, "");
+      return acceptedNorm.includes(norm);
+    });
+    if (isSubstring) continue;
+
+    // Merge if identical normalized text already exists
+    const existingIdx = result.findIndex((accepted) => {
+      const acceptedNorm = accepted.text.replace(/[\s\u3000]/g, "");
+      return acceptedNorm === norm;
+    });
+
+    if (existingIdx >= 0) {
+      const existing = result[existingIdx];
+      result[existingIdx] = {
+        ...existing,
+        startTimeSeconds: Math.min(existing.startTimeSeconds, entry.startTimeSeconds),
+        endTimeSeconds: Math.max(existing.endTimeSeconds, entry.endTimeSeconds),
+        confidence: Math.max(existing.confidence, entry.confidence),
+        frames: [...existing.frames, ...entry.frames],
+      };
+    } else {
+      result.push(entry);
+    }
+  }
+
+  return result;
+}
+
 export const TARGET_AUDIENCE_LABELS: Record<string, string> = {
   children_3_6: "子供（3〜6歳）",
   children_7_12: "子供（7〜12歳）",

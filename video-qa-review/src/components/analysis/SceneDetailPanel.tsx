@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import type { Scene } from "@/types/scene";
 import { useProjectStore } from "@/stores/useProjectStore";
-import { formatTime, SEVERITY_LABELS, CATEGORY_LABELS, groupWordsIntoSentences } from "@/lib/utils";
+import { formatTime, SEVERITY_LABELS, CATEGORY_LABELS, groupWordsIntoSentences, deduplicateDetectedText } from "@/lib/utils";
 
 interface SceneDetailPanelProps {
   scene: Scene | null;
@@ -49,6 +49,11 @@ export function SceneDetailPanel({ scene, currentTime = 0, onTimestampClick }: S
     [scene]
   );
 
+  const dedupedText = useMemo(
+    () => scene ? deduplicateDetectedText(scene.viData.detectedText) : [],
+    [scene]
+  );
+
   // Auto-scroll to active sentence in speech tab
   useEffect(() => {
     if (activeTab === "speech" && activeSentenceRef.current) {
@@ -66,7 +71,7 @@ export function SceneDetailPanel({ scene, currentTime = 0, onTimestampClick }: S
 
   const tabs: { key: Tab; label: string; count?: number }[] = [
     { key: "issues", label: "問題", count: scene.geminiAnalysis?.issues.length || 0 },
-    { key: "text", label: "テキスト", count: scene.viData.detectedText.length },
+    { key: "text", label: "テキスト", count: dedupedText.length },
     { key: "speech", label: "音声", count: scene.viData.speechTranscription.length > 0 ? 1 : 0 },
     { key: "labels", label: "ラベル", count: scene.viData.labels.length },
     { key: "objects", label: "物体", count: scene.viData.objects.length },
@@ -185,15 +190,15 @@ export function SceneDetailPanel({ scene, currentTime = 0, onTimestampClick }: S
             )}
 
             {/* VI OCR raw results */}
-            {scene.viData.detectedText.length === 0 && !scene.geminiAnalysis?.detectedTextSummary ? (
+            {dedupedText.length === 0 && !scene.geminiAnalysis?.detectedTextSummary ? (
               <p className="text-sm text-gray-400 text-center py-4">テキストなし</p>
-            ) : scene.viData.detectedText.length > 0 ? (
+            ) : dedupedText.length > 0 ? (
               <>
                 {scene.geminiAnalysis?.detectedTextSummary && (
                   <h4 className="text-xs font-medium text-gray-400 px-2">OCR検出結果</h4>
                 )}
                 <div className="space-y-1">
-                  {scene.viData.detectedText.map((t, i) => (
+                  {dedupedText.map((t, i) => (
                     <button
                       key={i}
                       onClick={() => onTimestampClick?.(t.startTimeSeconds)}
@@ -207,11 +212,11 @@ export function SceneDetailPanel({ scene, currentTime = 0, onTimestampClick }: S
             ) : null}
 
             {/* Telop vs Speech comparison */}
-            {scene.viData.detectedText.length > 0 && scene.geminiTranscription?.fullTranscript && (
+            {dedupedText.length > 0 && scene.geminiTranscription?.fullTranscript && (
               <div className="mt-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
                 <h4 className="text-xs font-medium text-blue-700 mb-2">テロップ vs 音声 照合</h4>
                 <div className="space-y-1.5">
-                  {scene.viData.detectedText.map((t, i) => {
+                  {dedupedText.map((t, i) => {
                     const telopText = t.text.replace(/[\s\u3000]/g, "");
                     const speechText = (scene.geminiTranscription?.fullTranscript || "").replace(/[\s\u3000]/g, "");
                     const isMatch = speechText.includes(telopText) || telopText.includes(speechText);
