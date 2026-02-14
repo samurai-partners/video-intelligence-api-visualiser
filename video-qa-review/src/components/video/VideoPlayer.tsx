@@ -63,12 +63,12 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
     }, []);
 
     return (
-      <div className="relative w-full bg-black flex items-center justify-center" style={{ height: height ? `${height}px` : "35vh" }}>
+      <div className="relative w-full bg-black" style={{ height: height ? `${height}px` : "35vh" }}>
         <video
           ref={videoRef}
           src={src}
           controls
-          className="max-w-full max-h-full"
+          className="w-full h-full object-contain"
           onLoadedMetadata={() => setVideoReady(true)}
         />
         {/* Overlay rendered on top of video, inside the same relative container */}

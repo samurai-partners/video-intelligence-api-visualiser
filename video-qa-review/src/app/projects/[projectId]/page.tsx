@@ -397,7 +397,7 @@ export default function ReviewPage({ params }: { params: Promise<{ projectId: st
           className="border-r border-gray-200 bg-white flex-shrink-0 overflow-y-auto p-2"
           style={{ width: leftWidth }}
         >
-          <SceneSidebar onSceneClick={handleSceneClick} />
+          <SceneSidebar onSceneClick={handleSceneClick} videoElement={playerRef.current?.getVideoElement() ?? null} />
         </aside>
 
         {/* Left resize handle */}

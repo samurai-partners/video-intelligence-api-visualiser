@@ -205,6 +205,41 @@ export function SceneDetailPanel({ scene, currentTime = 0, onTimestampClick }: S
                 </div>
               </>
             ) : null}
+
+            {/* Telop vs Speech comparison */}
+            {scene.viData.detectedText.length > 0 && scene.geminiTranscription?.fullTranscript && (
+              <div className="mt-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                <h4 className="text-xs font-medium text-blue-700 mb-2">テロップ vs 音声 照合</h4>
+                <div className="space-y-1.5">
+                  {scene.viData.detectedText.map((t, i) => {
+                    const telopText = t.text.replace(/[\s\u3000]/g, "");
+                    const speechText = (scene.geminiTranscription?.fullTranscript || "").replace(/[\s\u3000]/g, "");
+                    const isMatch = speechText.includes(telopText) || telopText.includes(speechText);
+                    const hasOverlap = !isMatch && [...telopText].some((char) => speechText.includes(char));
+
+                    return (
+                      <div key={i} className="flex items-start gap-2 text-xs">
+                        <span className={`flex-shrink-0 mt-0.5 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold text-white ${
+                          isMatch ? "bg-green-500" : hasOverlap ? "bg-yellow-500" : "bg-red-500"
+                        }`}>
+                          {isMatch ? "\u2713" : hasOverlap ? "?" : "\u2717"}
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-gray-700">
+                            <span className="text-gray-400">テロップ: </span>
+                            <span className="font-medium">{t.text}</span>
+                          </p>
+                          <p className="text-gray-500 truncate">
+                            <span className="text-gray-400">音声: </span>
+                            {scene.geminiTranscription?.fullTranscript || "-"}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
