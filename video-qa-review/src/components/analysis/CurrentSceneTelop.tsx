@@ -19,6 +19,7 @@ export function CurrentSceneTelop({ currentScene }: CurrentSceneTelopProps) {
   const setHiddenTelop = useProjectStore((s) => s.setHiddenTelop);
   const clearHiddenTelop = useProjectStore((s) => s.clearHiddenTelop);
   const bulkHideTelops = useProjectStore((s) => s.bulkHideTelops);
+  const bboxThreshold = useProjectStore((s) => s.bboxThreshold);
 
   const [hiddenListOpen, setHiddenListOpen] = useState(false);
 
@@ -46,7 +47,7 @@ export function CurrentSceneTelop({ currentScene }: CurrentSceneTelopProps) {
   // Current scene telop matches
   const sceneMatches = useMemo(() => {
     if (!currentScene) return [];
-    const dedupedTexts = deduplicateDetectedText(currentScene.viData.detectedText)
+    const dedupedTexts = deduplicateDetectedText(currentScene.viData.detectedText, bboxThreshold)
       .sort((a, b) => a.startTimeSeconds - b.startTimeSeconds);
     if (dedupedTexts.length === 0) return [];
     return dedupedTexts

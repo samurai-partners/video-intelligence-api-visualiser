@@ -41,6 +41,9 @@ interface ProjectState {
   // Hidden telops (normalized text, hidden across all scenes)
   hiddenTelops: Set<string>;
 
+  // Bbox filter threshold (normalized area, 0-1)
+  bboxThreshold: number;
+
   // Actions
   setDraftVideo: (video: DraftVideo | null) => void;
   setVideoFile: (file: File | null) => void;
@@ -59,6 +62,7 @@ interface ProjectState {
   clearHiddenTelop: (text: string) => void;
   bulkHideTelops: (texts: string[]) => void;
   bulkSetTelopOverrides: (entries: Array<{ key: string; result: MatchResult }>) => void;
+  setBboxThreshold: (value: number) => void;
   updateIssueStatus: (issueId: string, status: Issue["status"]) => void;
   reset: () => void;
 }
@@ -83,6 +87,7 @@ export const useProjectStore = create<ProjectState>((set) => ({
   filterSeverity: new Set(["critical", "warning", "info"]),
   telopOverrides: new Map(),
   hiddenTelops: new Set(),
+  bboxThreshold: 0.005,
 
   setDraftVideo: (video) => set({ draftVideo: video }),
   setVideoFile: (file) => set({ videoFile: file }),
@@ -150,6 +155,7 @@ export const useProjectStore = create<ProjectState>((set) => ({
       for (const { key, result } of entries) next.set(key, result);
       return { telopOverrides: next };
     }),
+  setBboxThreshold: (value) => set({ bboxThreshold: value }),
   updateIssueStatus: (issueId, status) =>
     set((state) => ({
       issues: state.issues.map((i) =>
@@ -170,5 +176,6 @@ export const useProjectStore = create<ProjectState>((set) => ({
       filterSeverity: new Set(["critical", "warning", "info"]),
       telopOverrides: new Map(),
       hiddenTelops: new Set(),
+      bboxThreshold: 0.005,
     }),
 }));

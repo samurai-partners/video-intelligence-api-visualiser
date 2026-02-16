@@ -238,36 +238,79 @@ function parseChunkTranscriptionResponse(text: string, chunkScenes: ChunkSceneIn
     const parsed = JSON.parse(text);
     const rawScenes = parsed.scenes || [];
 
-    const scenes = chunkScenes.map((input) => {
-      const match = rawScenes.find((s: any) => s.sceneIndex === input.sceneIndex);
-      if (!match) {
-        return {
-          sceneIndex: input.sceneIndex,
-          words: [],
-          fullTranscript: "",
-          detectedLanguage: "unknown",
-          translatedTranscript: "",
-          translatedWords: [],
-        };
+    // Step 1: 全ワードを1つのプールに集約（絶対時間に変換）
+    type Word = { word: string; startSeconds: number; endSeconds: number };
+    const allWords: Word[] = [];
+    const allTranslatedWords: Word[] = [];
+    const langMap = new Map<number, string>();
+
+    for (const rs of rawScenes) {
+      if (rs.detectedLanguage) langMap.set(rs.sceneIndex, rs.detectedLanguage);
+      for (const w of rs.words || []) {
+        allWords.push({
+          word: String(w.word || ""),
+          startSeconds: (typeof w.startSeconds === "number" ? w.startSeconds : 0) + chunkOffsetSeconds,
+          endSeconds: (typeof w.endSeconds === "number" ? w.endSeconds : 0) + chunkOffsetSeconds,
+        });
       }
-      // Add chunkOffsetSeconds to convert relative timestamps to absolute
-      const words = (match.words || []).map((w: any) => ({
-        word: String(w.word || ""),
-        startSeconds: (typeof w.startSeconds === "number" ? w.startSeconds : 0) + chunkOffsetSeconds,
-        endSeconds: (typeof w.endSeconds === "number" ? w.endSeconds : 0) + chunkOffsetSeconds,
-      }));
-      const translatedWords = (match.translatedWords || []).map((w: any) => ({
-        word: String(w.word || ""),
-        startSeconds: (typeof w.startSeconds === "number" ? w.startSeconds : 0) + chunkOffsetSeconds,
-        endSeconds: (typeof w.endSeconds === "number" ? w.endSeconds : 0) + chunkOffsetSeconds,
-      }));
+      for (const w of rs.translatedWords || []) {
+        allTranslatedWords.push({
+          word: String(w.word || ""),
+          startSeconds: (typeof w.startSeconds === "number" ? w.startSeconds : 0) + chunkOffsetSeconds,
+          endSeconds: (typeof w.endSeconds === "number" ? w.endSeconds : 0) + chunkOffsetSeconds,
+        });
+      }
+    }
+
+    // Step 2: 時間順にソート
+    allWords.sort((a, b) => a.startSeconds - b.startSeconds);
+    allTranslatedWords.sort((a, b) => a.startSeconds - b.startSeconds);
+
+    // Step 3: 各ワードをタイムスタンプで正しいシーンに再割り当て（±0.5秒マージン）
+    const MARGIN = 0.5;
+    const assignToScenes = (words: Word[]) => {
+      const buckets = new Map<number, Word[]>();
+      for (const input of chunkScenes) buckets.set(input.sceneIndex, []);
+      for (const w of words) {
+        // ワードのstartSecondsがどのシーン範囲に入るか
+        let assigned = false;
+        for (const input of chunkScenes) {
+          if (w.startSeconds >= input.startTimeSeconds - MARGIN &&
+              w.startSeconds < input.endTimeSeconds + MARGIN) {
+            buckets.get(input.sceneIndex)!.push(w);
+            assigned = true;
+            break;
+          }
+        }
+        // どのシーンにも入らない場合は最も近いシーンに割り当て
+        if (!assigned && chunkScenes.length > 0) {
+          let closest = chunkScenes[0];
+          let minDist = Infinity;
+          for (const input of chunkScenes) {
+            const mid = (input.startTimeSeconds + input.endTimeSeconds) / 2;
+            const dist = Math.abs(w.startSeconds - mid);
+            if (dist < minDist) { minDist = dist; closest = input; }
+          }
+          buckets.get(closest.sceneIndex)!.push(w);
+        }
+      }
+      return buckets;
+    };
+
+    const wordBuckets = assignToScenes(allWords);
+    const translatedBuckets = assignToScenes(allTranslatedWords);
+
+    // Step 4: シーンごとに結果を構築
+    const scenes = chunkScenes.map((input) => {
+      const sceneWords = wordBuckets.get(input.sceneIndex) || [];
+      const sceneTranslated = translatedBuckets.get(input.sceneIndex) || [];
       return {
         sceneIndex: input.sceneIndex,
-        words,
-        fullTranscript: match.fullTranscript || words.map((w: { word: string }) => w.word).join(""),
-        detectedLanguage: match.detectedLanguage || "unknown",
-        translatedTranscript: match.translatedTranscript || "",
-        translatedWords,
+        words: sceneWords,
+        fullTranscript: sceneWords.map((w) => w.word).join(""),
+        detectedLanguage: langMap.get(input.sceneIndex) || "unknown",
+        translatedTranscript: sceneTranslated.map((w) => w.word).join(""),
+        translatedWords: sceneTranslated,
       };
     });
 

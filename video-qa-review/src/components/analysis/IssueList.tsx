@@ -36,6 +36,7 @@ export function IssueList({ onIssueClick, currentScene }: IssueListProps) {
   const setHiddenTelop = useProjectStore((s) => s.setHiddenTelop);
   const clearHiddenTelop = useProjectStore((s) => s.clearHiddenTelop);
   const bulkHideTelops = useProjectStore((s) => s.bulkHideTelops);
+  const bboxThreshold = useProjectStore((s) => s.bboxThreshold);
 
   const [allScenesOpen, setAllScenesOpen] = useState(false);
   const [hiddenListOpen, setHiddenListOpen] = useState(false);
@@ -55,7 +56,7 @@ export function IssueList({ onIssueClick, currentScene }: IssueListProps) {
   // Current scene telop matches (with manual override + hidden filter)
   const sceneMatches = useMemo(() => {
     if (!currentScene) return [];
-    const dedupedTexts = deduplicateDetectedText(currentScene.viData.detectedText);
+    const dedupedTexts = deduplicateDetectedText(currentScene.viData.detectedText, bboxThreshold);
     if (dedupedTexts.length === 0) return [];
     const speech = currentScene.geminiTranscription?.fullTranscript || "";
     return dedupedTexts
@@ -71,7 +72,7 @@ export function IssueList({ onIssueClick, currentScene }: IssueListProps) {
           isOverridden: !!override,
         };
       });
-  }, [currentScene, telopOverrides, hiddenTelops]);
+  }, [currentScene, telopOverrides, hiddenTelops, bboxThreshold]);
 
   // All-scenes telop matches (computed only when section is open)
   const allMatches = useMemo(() => {
@@ -88,7 +89,7 @@ export function IssueList({ onIssueClick, currentScene }: IssueListProps) {
       if (s.viData.detectedText.length === 0) continue;
       const sSpeech = s.geminiTranscription?.fullTranscript || "";
       if (!sSpeech) continue;
-      const deduped = deduplicateDetectedText(s.viData.detectedText);
+      const deduped = deduplicateDetectedText(s.viData.detectedText, bboxThreshold);
       for (const dt of deduped) {
         if (isHidden(dt.text)) continue;
         const key = `${s.index}-${dt.text}`;
@@ -105,7 +106,7 @@ export function IssueList({ onIssueClick, currentScene }: IssueListProps) {
       }
     }
     return results;
-  }, [scenes, telopOverrides, allScenesOpen, hiddenTelops]);
+  }, [scenes, telopOverrides, allScenesOpen, hiddenTelops, bboxThreshold]);
 
   // Summary counts
   const summaryCounts = useMemo(() => {
@@ -114,7 +115,7 @@ export function IssueList({ onIssueClick, currentScene }: IssueListProps) {
       if (s.viData.detectedText.length === 0) continue;
       const sSpeech = s.geminiTranscription?.fullTranscript || "";
       if (!sSpeech) continue;
-      const deduped = deduplicateDetectedText(s.viData.detectedText);
+      const deduped = deduplicateDetectedText(s.viData.detectedText, bboxThreshold);
       for (const dt of deduped) {
         if (isHidden(dt.text)) continue;
         const key = `${s.index}-${dt.text}`;
@@ -126,7 +127,7 @@ export function IssueList({ onIssueClick, currentScene }: IssueListProps) {
       }
     }
     return { match, partial, mismatch };
-  }, [scenes, telopOverrides, hiddenTelops]);
+  }, [scenes, telopOverrides, hiddenTelops, bboxThreshold]);
 
   const filteredAll = useMemo(() => {
     const order: Record<MatchResult, number> = { mismatch: 0, partial: 1, match: 2 };

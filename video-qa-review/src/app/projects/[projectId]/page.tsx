@@ -14,6 +14,7 @@ import { AllSceneDashboard } from "@/components/analysis/AllSceneDashboard";
 import { AnalysisProgress } from "@/components/analysis/AnalysisProgress";
 import { AnalysisLogPanel, type LogEntry } from "@/components/analysis/AnalysisLogPanel";
 import { VideoOverlay, type DetectionType } from "@/components/video/VideoOverlay";
+import { BboxSettingsModal } from "@/components/analysis/BboxSettingsModal";
 import type { Scene } from "@/types/scene";
 import type { Issue } from "@/types/issue";
 
@@ -39,6 +40,7 @@ export default function ReviewPage({ params }: { params: Promise<{ projectId: st
   const [currentTime, setCurrentTime] = useState(0);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [logModalOpen, setLogModalOpen] = useState(false);
+  const [bboxModalOpen, setBboxModalOpen] = useState(false);
   const [overlayTypes, setOverlayTypes] = useState<Set<DetectionType>>(
     new Set(["person", "face", "logo", "text"]) // object OFF by default
   );
@@ -389,6 +391,15 @@ export default function ReviewPage({ params }: { params: Promise<{ projectId: st
               レポート出力
             </Link>
           )}
+          {scenes.length > 0 && (
+            <button
+              onClick={() => setBboxModalOpen(true)}
+              className="px-2 py-1 bg-gray-100 text-gray-500 rounded text-xs hover:bg-gray-200 transition-colors"
+              title="テキスト面積フィルタ設定"
+            >
+              &#x2699;
+            </button>
+          )}
           {logs.length > 0 && (
             <button
               onClick={() => setLogModalOpen(true)}
@@ -592,6 +603,8 @@ export default function ReviewPage({ params }: { params: Promise<{ projectId: st
           </div>
         </div>
       )}
+
+      <BboxSettingsModal open={bboxModalOpen} onClose={() => setBboxModalOpen(false)} />
     </div>
   );
 }

@@ -83,7 +83,7 @@ function levenshteinDistance(a: string, b: string): number {
 }
 
 /** テキストフレーム群の平均バウンディングボックス面積を計算（0〜1正規化） */
-function getAverageBboxArea(frames: TextFrame[]): number {
+export function getAverageBboxArea(frames: TextFrame[]): number {
   if (frames.length === 0) return 0;
   let total = 0;
   for (const f of frames) {
@@ -117,15 +117,14 @@ function isOcrNoise(norm: string): boolean {
  */
 export function deduplicateDetectedText<
   T extends { text: string; startTimeSeconds: number; endTimeSeconds: number; confidence: number; frames: TextFrame[] }
->(texts: T[]): T[] {
+>(texts: T[], bboxThreshold: number = 0.005): T[] {
   if (texts.length <= 1) return texts;
 
   // Phase 1: filter noise (text length + bounding box area)
   const filtered = texts.filter((entry) => {
     const norm = entry.text.replace(/[\s\u3000]/g, "");
     if (isOcrNoise(norm)) return false;
-    // VideoOverlayと同基準: bbox面積 < 0.5% は小さい背景文字
-    if (entry.frames.length > 0 && getAverageBboxArea(entry.frames) < 0.005) return false;
+    if (entry.frames.length > 0 && getAverageBboxArea(entry.frames) < bboxThreshold) return false;
     return true;
   });
   if (filtered.length === 0) return [];

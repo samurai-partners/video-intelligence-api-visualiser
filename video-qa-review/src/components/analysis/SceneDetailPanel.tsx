@@ -49,9 +49,10 @@ export function SceneDetailPanel({ scene, currentTime = 0, onTimestampClick }: S
     [scene]
   );
 
+  const bboxThreshold = useProjectStore((s) => s.bboxThreshold);
   const dedupedText = useMemo(
-    () => scene ? deduplicateDetectedText(scene.viData.detectedText) : [],
-    [scene]
+    () => scene ? deduplicateDetectedText(scene.viData.detectedText, bboxThreshold) : [],
+    [scene, bboxThreshold]
   );
 
   // Auto-scroll to active sentence in speech tab

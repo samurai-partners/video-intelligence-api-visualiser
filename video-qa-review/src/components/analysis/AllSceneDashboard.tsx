@@ -20,6 +20,7 @@ export function AllSceneDashboard({ onSceneClick, onIssueClick }: AllSceneDashbo
   const telopOverrides = useProjectStore((s) => s.telopOverrides);
   const hiddenTelops = useProjectStore((s) => s.hiddenTelops);
   const bulkSetTelopOverrides = useProjectStore((s) => s.bulkSetTelopOverrides);
+  const bboxThreshold = useProjectStore((s) => s.bboxThreshold);
 
   // Active filter tab: null = show issues, or a MatchResult to show scene chips
   const [activeTab, setActiveTab] = useState<MatchResult | null>(null);
@@ -50,7 +51,7 @@ export function AllSceneDashboard({ onSceneClick, onIssueClick }: AllSceneDashbo
       const prev = si > 0 ? scenes[si - 1]?.geminiTranscription?.fullTranscript || "" : "";
       const next = si < scenes.length - 1 ? scenes[si + 1]?.geminiTranscription?.fullTranscript || "" : "";
       const combined = prev + sSpeech + next;
-      const deduped = deduplicateDetectedText(s.viData.detectedText);
+      const deduped = deduplicateDetectedText(s.viData.detectedText, bboxThreshold);
       for (const dt of deduped) {
         if (isHidden(dt.text)) continue;
         const key = `${s.index}-${dt.text}`;
@@ -74,7 +75,7 @@ export function AllSceneDashboard({ onSceneClick, onIssueClick }: AllSceneDashbo
       allMatches: matches,
       summaryCounts: { match: matchCount, partial: partialCount, mismatch: mismatchCount },
     };
-  }, [scenes, telopOverrides, hiddenTelops]);
+  }, [scenes, telopOverrides, hiddenTelops, bboxThreshold]);
 
   // Group scenes by match result for chip display
   const scenesByResult = useMemo(() => {

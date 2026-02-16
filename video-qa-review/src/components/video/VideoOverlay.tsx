@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import type { Scene, BoundingBox } from "@/types/scene";
+import { useProjectStore } from "@/stores/useProjectStore";
 
 export type DetectionType = "person" | "face" | "object" | "logo" | "text";
 
@@ -72,6 +73,7 @@ function computeVideoRect(video: HTMLVideoElement): VideoRect {
 const ALL_TYPES: Set<DetectionType> = new Set(["person", "face", "object", "logo", "text"]);
 
 export function VideoOverlay({ videoElement, currentTime, scene, enabledTypes = ALL_TYPES }: VideoOverlayProps) {
+  const bboxThreshold = useProjectStore((s) => s.bboxThreshold);
   const [videoRect, setVideoRect] = useState<VideoRect>({ left: 0, top: 0, width: 0, height: 0 });
   const rafRef = useRef(0);
 
@@ -162,14 +164,14 @@ export function VideoOverlay({ videoElement, currentTime, scene, enabledTypes = 
           const ys = nearest.vertices.map((v) => v.y);
           const bboxW = Math.max(...xs) - Math.min(...xs);
           const bboxH = Math.max(...ys) - Math.min(...ys);
-          if (bboxW * bboxH < 0.005) continue;
+          if (bboxW * bboxH < bboxThreshold) continue;
           result.push({ type: "text", label: text.text, vertices: nearest.vertices });
         }
       }
     }
 
     return result;
-  }, [scene, currentTime, enabledTypes]);
+  }, [scene, currentTime, enabledTypes, bboxThreshold]);
 
   if (!videoElement || videoRect.width === 0 || detections.length === 0) return null;
 

@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import type { Scene } from "@/types/scene";
+import { useProjectStore } from "@/stores/useProjectStore";
 import { formatTime, deduplicateDetectedText } from "@/lib/utils";
 
 interface TextPanelProps {
@@ -11,9 +12,10 @@ interface TextPanelProps {
 }
 
 export function TextPanel({ scene, currentTime = 0, onTimestampClick }: TextPanelProps) {
+  const bboxThreshold = useProjectStore((s) => s.bboxThreshold);
   const dedupedText = useMemo(
-    () => (scene ? deduplicateDetectedText(scene.viData.detectedText) : []),
-    [scene]
+    () => (scene ? deduplicateDetectedText(scene.viData.detectedText, bboxThreshold) : []),
+    [scene, bboxThreshold]
   );
 
   if (!scene) {
