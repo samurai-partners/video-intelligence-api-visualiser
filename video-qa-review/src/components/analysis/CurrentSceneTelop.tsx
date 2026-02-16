@@ -31,17 +31,30 @@ export function CurrentSceneTelop({ currentScene }: CurrentSceneTelopProps) {
   // Speech text for current scene (also displayed for debugging)
   const speech = currentScene?.geminiTranscription?.fullTranscript || "";
 
+  // 前後シーンの音声も結合して照合（タイムスタンプズレ対策）
+  const combinedSpeech = useMemo(() => {
+    if (!currentScene) return "";
+    const prev = currentScene.index > 0 ? scenes[currentScene.index - 1] : null;
+    const next = currentScene.index < scenes.length - 1 ? scenes[currentScene.index + 1] : null;
+    return [
+      prev?.geminiTranscription?.fullTranscript || "",
+      speech,
+      next?.geminiTranscription?.fullTranscript || "",
+    ].join("");
+  }, [currentScene, scenes, speech]);
+
   // Current scene telop matches
   const sceneMatches = useMemo(() => {
     if (!currentScene) return [];
-    const dedupedTexts = deduplicateDetectedText(currentScene.viData.detectedText);
+    const dedupedTexts = deduplicateDetectedText(currentScene.viData.detectedText)
+      .sort((a, b) => a.startTimeSeconds - b.startTimeSeconds);
     if (dedupedTexts.length === 0) return [];
     return dedupedTexts
       .filter((dt) => !isHidden(dt.text))
       .map((dt) => {
         const key = `${currentScene.index}-${dt.text}`;
         const override = telopOverrides.get(key);
-        const auto = speech ? compareTelopSpeech(dt.text, speech) : ("mismatch" as MatchResult);
+        const auto = combinedSpeech ? compareTelopSpeech(dt.text, combinedSpeech) : ("mismatch" as MatchResult);
         return {
           key,
           telopText: dt.text,
@@ -49,7 +62,7 @@ export function CurrentSceneTelop({ currentScene }: CurrentSceneTelopProps) {
           isOverridden: !!override,
         };
       });
-  }, [currentScene, telopOverrides, hiddenTelops]);
+  }, [currentScene, telopOverrides, hiddenTelops, combinedSpeech]);
 
   const handleOverride = (key: string, result: MatchResult) => {
     const current = telopOverrides.get(key);

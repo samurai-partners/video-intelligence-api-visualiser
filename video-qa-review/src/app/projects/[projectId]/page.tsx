@@ -125,6 +125,12 @@ export default function ReviewPage({ params }: { params: Promise<{ projectId: st
         setCurrentSceneIndex(newIdx);
         const scene = scenes[newIdx];
         if (scene) playerRef.current?.seekTo(scene.startTimeSeconds);
+      } else if (e.key === " " || e.code === "Space") {
+        e.preventDefault();
+        const video = playerRef.current?.getVideoElement();
+        if (video) {
+          video.paused ? playerRef.current?.play() : playerRef.current?.pause();
+        }
       }
     }
 

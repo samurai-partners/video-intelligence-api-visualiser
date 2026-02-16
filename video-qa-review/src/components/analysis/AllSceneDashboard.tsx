@@ -41,16 +41,21 @@ export function AllSceneDashboard({ onSceneClick, onIssueClick }: AllSceneDashbo
     }> = [];
     let matchCount = 0, partialCount = 0, mismatchCount = 0;
 
-    for (const s of scenes) {
+    for (let si = 0; si < scenes.length; si++) {
+      const s = scenes[si];
       if (s.viData.detectedText.length === 0) continue;
       const sSpeech = s.geminiTranscription?.fullTranscript || "";
       if (!sSpeech) continue;
+      // 前後シーンの音声も結合（タイムスタンプズレ対策）
+      const prev = si > 0 ? scenes[si - 1]?.geminiTranscription?.fullTranscript || "" : "";
+      const next = si < scenes.length - 1 ? scenes[si + 1]?.geminiTranscription?.fullTranscript || "" : "";
+      const combined = prev + sSpeech + next;
       const deduped = deduplicateDetectedText(s.viData.detectedText);
       for (const dt of deduped) {
         if (isHidden(dt.text)) continue;
         const key = `${s.index}-${dt.text}`;
         const override = telopOverrides.get(key);
-        const auto = compareTelopSpeech(dt.text, sSpeech);
+        const auto = compareTelopSpeech(dt.text, combined);
         const result = override || auto;
         matches.push({
           key,
