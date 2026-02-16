@@ -13,6 +13,8 @@ interface DraftVideo {
   size: number;
 }
 
+export type MatchResult = "match" | "partial" | "mismatch";
+
 interface ProjectState {
   // Draft (before analysis)
   draftVideo: DraftVideo | null;
@@ -32,6 +34,12 @@ interface ProjectState {
   currentSceneIndex: number;
   filterSeverity: Set<string>;
 
+  // Telop manual overrides: key = "sceneIndex-telopText"
+  telopOverrides: Map<string, MatchResult>;
+
+  // Hidden telops (normalized text, hidden across all scenes)
+  hiddenTelops: Set<string>;
+
   // Actions
   setDraftVideo: (video: DraftVideo | null) => void;
   setVideoFile: (file: File | null) => void;
@@ -44,6 +52,11 @@ interface ProjectState {
   setTranscriptionProgress: (progress: { completed: number; total: number } | null) => void;
   setCurrentSceneIndex: (index: number) => void;
   toggleSeverityFilter: (severity: string) => void;
+  setTelopOverride: (key: string, result: MatchResult) => void;
+  clearTelopOverride: (key: string) => void;
+  setHiddenTelop: (text: string) => void;
+  clearHiddenTelop: (text: string) => void;
+  bulkHideTelops: (texts: string[]) => void;
   updateIssueStatus: (issueId: string, status: Issue["status"]) => void;
   reset: () => void;
 }
@@ -66,6 +79,8 @@ export const useProjectStore = create<ProjectState>((set) => ({
   transcriptionProgress: null,
   currentSceneIndex: 0,
   filterSeverity: new Set(["critical", "warning", "info"]),
+  telopOverrides: new Map(),
+  hiddenTelops: new Set(),
 
   setDraftVideo: (video) => set({ draftVideo: video }),
   setVideoFile: (file) => set({ videoFile: file }),
@@ -97,6 +112,36 @@ export const useProjectStore = create<ProjectState>((set) => ({
       }
       return { filterSeverity: next };
     }),
+  setTelopOverride: (key, result) =>
+    set((state) => {
+      const next = new Map(state.telopOverrides);
+      next.set(key, result);
+      return { telopOverrides: next };
+    }),
+  clearTelopOverride: (key) =>
+    set((state) => {
+      const next = new Map(state.telopOverrides);
+      next.delete(key);
+      return { telopOverrides: next };
+    }),
+  setHiddenTelop: (text) =>
+    set((state) => {
+      const next = new Set(state.hiddenTelops);
+      next.add(text.replace(/[\s\u3000]/g, ""));
+      return { hiddenTelops: next };
+    }),
+  clearHiddenTelop: (text) =>
+    set((state) => {
+      const next = new Set(state.hiddenTelops);
+      next.delete(text.replace(/[\s\u3000]/g, ""));
+      return { hiddenTelops: next };
+    }),
+  bulkHideTelops: (texts) =>
+    set((state) => {
+      const next = new Set(state.hiddenTelops);
+      for (const t of texts) next.add(t.replace(/[\s\u3000]/g, ""));
+      return { hiddenTelops: next };
+    }),
   updateIssueStatus: (issueId, status) =>
     set((state) => ({
       issues: state.issues.map((i) =>
@@ -115,5 +160,7 @@ export const useProjectStore = create<ProjectState>((set) => ({
       transcriptionProgress: null,
       currentSceneIndex: 0,
       filterSeverity: new Set(["critical", "warning", "info"]),
+      telopOverrides: new Map(),
+      hiddenTelops: new Set(),
     }),
 }));

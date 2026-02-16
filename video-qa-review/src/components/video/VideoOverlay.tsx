@@ -45,18 +45,28 @@ function computeVideoRect(video: HTMLVideoElement): VideoRect {
     return { left: 0, top: 0, width: 0, height: 0 };
   }
 
-  const container = video.parentElement;
-  if (!container) return { left: 0, top: 0, width: elemW, height: elemH };
+  // Calculate the rendered area of object-contain video using aspect ratio math
+  // This avoids getBoundingClientRect() which can return stale values during resize
+  const videoAspect = videoW / videoH;
+  const elemAspect = elemW / elemH;
 
-  const containerRect = container.getBoundingClientRect();
-  const videoRect = video.getBoundingClientRect();
+  let renderW: number, renderH: number, offsetX: number, offsetY: number;
 
-  return {
-    left: videoRect.left - containerRect.left,
-    top: videoRect.top - containerRect.top,
-    width: videoRect.width,
-    height: videoRect.height,
-  };
+  if (videoAspect > elemAspect) {
+    // Video is wider than container → pillarbox (black bars top/bottom)
+    renderW = elemW;
+    renderH = elemW / videoAspect;
+    offsetX = 0;
+    offsetY = (elemH - renderH) / 2;
+  } else {
+    // Video is taller than container → letterbox (black bars left/right)
+    renderH = elemH;
+    renderW = elemH * videoAspect;
+    offsetX = (elemW - renderW) / 2;
+    offsetY = 0;
+  }
+
+  return { left: offsetX, top: offsetY, width: renderW, height: renderH };
 }
 
 const ALL_TYPES: Set<DetectionType> = new Set(["person", "face", "object", "logo", "text"]);
@@ -147,6 +157,12 @@ export function VideoOverlay({ videoElement, currentTime, scene, enabledTypes = 
         if (currentTime < text.startTimeSeconds || currentTime > text.endTimeSeconds) continue;
         const nearest = findNearestTextFrame(text.frames, currentTime, tolerance);
         if (nearest) {
+          // Filter out tiny OCR bounding boxes (< 0.5% of video area)
+          const xs = nearest.vertices.map((v) => v.x);
+          const ys = nearest.vertices.map((v) => v.y);
+          const bboxW = Math.max(...xs) - Math.min(...xs);
+          const bboxH = Math.max(...ys) - Math.min(...ys);
+          if (bboxW * bboxH < 0.005) continue;
           result.push({ type: "text", label: text.text, vertices: nearest.vertices });
         }
       }

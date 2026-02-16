@@ -19,10 +19,42 @@ export function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
+/** Levenshtein edit distance (O(min(a,b)) space) */
+function levenshteinDistance(a: string, b: string): number {
+  if (a === b) return 0;
+  if (a.length === 0) return b.length;
+  if (b.length === 0) return a.length;
+  if (a.length > b.length) [a, b] = [b, a];
+  const aLen = a.length;
+  const bLen = b.length;
+  let prev = Array.from({ length: aLen + 1 }, (_, i) => i);
+  let curr = new Array<number>(aLen + 1);
+  for (let j = 1; j <= bLen; j++) {
+    curr[0] = j;
+    for (let i = 1; i <= aLen; i++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      curr[i] = Math.min(prev[i] + 1, curr[i - 1] + 1, prev[i - 1] + cost);
+    }
+    [prev, curr] = [curr, prev];
+  }
+  return prev[aLen];
+}
+
+/** OCRノイズ判定: CJKを含まない短いテキストはノイズ */
+function isOcrNoise(norm: string): boolean {
+  if (norm.length === 0) return true;
+  const hasCJK = /[\u3000-\u9fff\uf900-\ufaff\uff00-\uffef]/.test(norm);
+  if (norm.length === 1) return !hasCJK;
+  if (norm.length === 2 && !hasCJK) return true;
+  return false;
+}
+
 /**
- * OCRテキストの重複排除。
- * - テキスト長の降順でソート（長いものを優先）
- * - 短いテキストが既存エントリの部分文字列なら除外（"化" ⊂ "元化" → 除外）
+ * OCRテキストの重複排除（ファジーマッチ対応）。
+ * - OCRノイズ（1-2文字のASCII）を除外
+ * - テキスト長→信頼度の降順でソート（長く信頼度の高いものを優先）
+ * - 部分文字列なら除外
+ * - 編集距離が短い方の30%以内ならファジーマージ（代表テキストは信頼度が高い方を採用）
  * - 同一テキストの重複エントリは時間範囲をマージ
  */
 export function deduplicateDetectedText<
@@ -30,41 +62,85 @@ export function deduplicateDetectedText<
 >(texts: T[]): T[] {
   if (texts.length <= 1) return texts;
 
-  const sorted = [...texts].sort((a, b) => b.text.length - a.text.length);
+  // Phase 1: filter noise
+  const filtered = texts.filter((entry) => {
+    const norm = entry.text.replace(/[\s\u3000]/g, "");
+    return !isOcrNoise(norm);
+  });
+  if (filtered.length === 0) return [];
+
+  // Phase 2: sort by length desc, then confidence desc
+  const sorted = [...filtered].sort((a, b) => {
+    const lenDiff = b.text.length - a.text.length;
+    if (lenDiff !== 0) return lenDiff;
+    return b.confidence - a.confidence;
+  });
+
+  // Phase 3: group with fuzzy matching
   const result: T[] = [];
+  const norms: string[] = []; // parallel array for cached normalized strings
 
   for (const entry of sorted) {
     const norm = entry.text.replace(/[\s\u3000]/g, "");
     if (!norm) continue;
 
-    // Skip if this text is a substring of any already-accepted text
-    const isSubstring = result.some((accepted) => {
-      const acceptedNorm = accepted.text.replace(/[\s\u3000]/g, "");
-      return acceptedNorm.includes(norm);
-    });
-    if (isSubstring) continue;
+    // Skip if substring of already-accepted text
+    if (norms.some((accepted) => accepted.includes(norm))) continue;
 
-    // Merge if identical normalized text already exists
-    const existingIdx = result.findIndex((accepted) => {
-      const acceptedNorm = accepted.text.replace(/[\s\u3000]/g, "");
-      return acceptedNorm === norm;
+    // Find fuzzy match in already-accepted entries
+    const fuzzyIdx = norms.findIndex((accepted) => {
+      if (accepted === norm) return true;
+      const shorter = Math.min(norm.length, accepted.length);
+      if (shorter < 3) return false;
+      const threshold = Math.ceil(shorter * 0.3);
+      return levenshteinDistance(norm, accepted) <= threshold;
     });
 
-    if (existingIdx >= 0) {
-      const existing = result[existingIdx];
-      result[existingIdx] = {
+    if (fuzzyIdx >= 0) {
+      // Merge into existing group
+      const existing = result[fuzzyIdx];
+      const useNewText = entry.confidence > existing.confidence;
+      result[fuzzyIdx] = {
         ...existing,
+        text: useNewText ? entry.text : existing.text,
         startTimeSeconds: Math.min(existing.startTimeSeconds, entry.startTimeSeconds),
         endTimeSeconds: Math.max(existing.endTimeSeconds, entry.endTimeSeconds),
         confidence: Math.max(existing.confidence, entry.confidence),
         frames: [...existing.frames, ...entry.frames],
-      };
+      } as T;
+      if (useNewText) norms[fuzzyIdx] = norm;
     } else {
       result.push(entry);
+      norms.push(norm);
     }
   }
 
   return result;
+}
+
+/**
+ * 全シーン横断で頻出するテロップを検出。
+ * threshold割合以上のシーンに出現するテキストを返す。
+ */
+export function detectPersistentText(
+  scenes: Array<{ viData: { detectedText: Array<{ text: string }> } }>,
+  threshold: number = 0.3
+): string[] {
+  if (scenes.length === 0) return [];
+  const textSceneCount = new Map<string, number>();
+  for (const scene of scenes) {
+    const seen = new Set<string>();
+    for (const dt of scene.viData.detectedText) {
+      const norm = dt.text.replace(/[\s\u3000]/g, "");
+      if (!norm || seen.has(norm)) continue;
+      seen.add(norm);
+      textSceneCount.set(norm, (textSceneCount.get(norm) || 0) + 1);
+    }
+  }
+  const minCount = Math.ceil(scenes.length * threshold);
+  return [...textSceneCount.entries()]
+    .filter(([, count]) => count >= minCount)
+    .map(([text]) => text);
 }
 
 export const TARGET_AUDIENCE_LABELS: Record<string, string> = {

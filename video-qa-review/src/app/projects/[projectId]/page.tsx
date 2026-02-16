@@ -7,7 +7,8 @@ import { VideoPlayer, type VideoPlayerHandle } from "@/components/video/VideoPla
 import { VideoTimeline } from "@/components/video/VideoTimeline";
 import { SceneNavigator } from "@/components/video/SceneNavigator";
 import { SceneSidebar } from "@/components/analysis/SceneSidebar";
-import { SceneDetailPanel } from "@/components/analysis/SceneDetailPanel";
+import { TextPanel } from "@/components/analysis/TextPanel";
+import { SpeechPanel } from "@/components/analysis/SpeechPanel";
 import { IssueList } from "@/components/analysis/IssueList";
 import { AnalysisProgress } from "@/components/analysis/AnalysisProgress";
 import { AnalysisLogPanel, type LogEntry } from "@/components/analysis/AnalysisLogPanel";
@@ -16,11 +17,11 @@ import type { Scene } from "@/types/scene";
 import type { Issue } from "@/types/issue";
 
 const DETECTION_TYPE_LABELS: Record<DetectionType, string> = {
-  person: "人物",
+  person: "人",
   face: "顔",
-  object: "物体",
-  logo: "ロゴ",
-  text: "テキスト",
+  object: "物",
+  logo: "ロ",
+  text: "字",
 };
 
 const DETECTION_TYPE_COLORS: Record<DetectionType, string> = {
@@ -38,17 +39,18 @@ export default function ReviewPage({ params }: { params: Promise<{ projectId: st
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [logModalOpen, setLogModalOpen] = useState(false);
   const [overlayTypes, setOverlayTypes] = useState<Set<DetectionType>>(
-    new Set(["person", "face", "object", "logo", "text"])
+    new Set(["person", "face", "logo", "text"]) // object OFF by default
   );
 
-  // Resizable column widths
+  // Resizable layout
   const [leftWidth, setLeftWidth] = useState(120);
-  const [rightWidth, setRightWidth] = useState(288);
+  const [videoWidth, setVideoWidth] = useState(480);
   const [videoHeight, setVideoHeight] = useState(280);
-  const draggingRef = useRef<"left" | "right" | null>(null);
-  const verticalDraggingRef = useRef(false);
+  const draggingRef = useRef<"left" | null>(null);
+  const cornerDraggingRef = useRef(false);
+  const cornerStartRef = useRef({ x: 0, y: 0, w: 0, h: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
-  const centerColumnRef = useRef<HTMLDivElement>(null);
+  const mainColumnRef = useRef<HTMLDivElement>(null);
 
   const draftVideo = useProjectStore((s) => s.draftVideo);
   const analysisStatus = useProjectStore((s) => s.analysisStatus);
@@ -74,16 +76,13 @@ export default function ReviewPage({ params }: { params: Promise<{ projectId: st
     if (scenes.length === 0) return;
     const scene = scenes[currentSceneIndex];
     if (!scene) return;
-    // If currentTime is within the current scene, no update needed
     if (currentTime >= scene.startTimeSeconds && currentTime < scene.endTimeSeconds) return;
-    // Find the scene that contains currentTime
     for (let i = 0; i < scenes.length; i++) {
       if (currentTime >= scenes[i].startTimeSeconds && currentTime < scenes[i].endTimeSeconds) {
         setCurrentSceneIndex(i);
         return;
       }
     }
-    // Handle edge case: time is at or past the last scene's end
     if (currentTime >= scenes[scenes.length - 1].startTimeSeconds) {
       setCurrentSceneIndex(scenes.length - 1);
     }
@@ -100,7 +99,7 @@ export default function ReviewPage({ params }: { params: Promise<{ projectId: st
     [scenes, seekTo, setCurrentSceneIndex]
   );
 
-  // Arrow key scene navigation + video seek
+  // Arrow key scene navigation
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if (
@@ -132,28 +131,28 @@ export default function ReviewPage({ params }: { params: Promise<{ projectId: st
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [scenes, setCurrentSceneIndex]);
 
-  // Column + vertical resize handler
+  // Resize handlers
   useEffect(() => {
     function handleMouseMove(e: MouseEvent) {
       e.preventDefault();
 
       if (draggingRef.current && containerRef.current) {
         const rect = containerRef.current.getBoundingClientRect();
-        if (draggingRef.current === "left") {
-          setLeftWidth(Math.max(80, Math.min(300, e.clientX - rect.left)));
-        } else {
-          setRightWidth(Math.max(200, Math.min(500, rect.right - e.clientX)));
-        }
-      } else if (verticalDraggingRef.current && centerColumnRef.current) {
-        const centerRect = centerColumnRef.current.getBoundingClientRect();
-        const newHeight = Math.max(120, Math.min(centerRect.height - 100, e.clientY - centerRect.top));
-        setVideoHeight(newHeight);
+        setLeftWidth(Math.max(80, Math.min(300, e.clientX - rect.left)));
+      } else if (cornerDraggingRef.current && mainColumnRef.current) {
+        const mainRect = mainColumnRef.current.getBoundingClientRect();
+        const dx = e.clientX - cornerStartRef.current.x;
+        const dy = e.clientY - cornerStartRef.current.y;
+        const maxW = mainRect.width - 200; // leave space for issue panel
+        const maxH = mainRect.height - 120; // leave space for bottom panels
+        setVideoWidth(Math.max(300, Math.min(maxW, cornerStartRef.current.w + dx)));
+        setVideoHeight(Math.max(150, Math.min(maxH, cornerStartRef.current.h + dy)));
       }
     }
 
     function handleMouseUp() {
       draggingRef.current = null;
-      verticalDraggingRef.current = false;
+      cornerDraggingRef.current = false;
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
     }
@@ -166,19 +165,25 @@ export default function ReviewPage({ params }: { params: Promise<{ projectId: st
     };
   }, []);
 
-  const startDrag = (side: "left" | "right") => {
-    draggingRef.current = side;
+  const startLeftDrag = () => {
+    draggingRef.current = "left";
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
   };
 
-  const startVerticalDrag = () => {
-    verticalDraggingRef.current = true;
-    document.body.style.cursor = "row-resize";
+  const startCornerDrag = (e: React.MouseEvent) => {
+    cornerDraggingRef.current = true;
+    cornerStartRef.current = {
+      x: e.clientX,
+      y: e.clientY,
+      w: videoWidth,
+      h: videoHeight,
+    };
+    document.body.style.cursor = "nwse-resize";
     document.body.style.userSelect = "none";
   };
 
-  // SSE stream reader - shared between live and mock analysis
+  // SSE stream reader
   const readSSEStream = useCallback(async (response: Response) => {
     const reader = response.body?.getReader();
     if (!reader) throw new Error("No response body");
@@ -248,7 +253,6 @@ export default function ReviewPage({ params }: { params: Promise<{ projectId: st
     setAnalysisStatus("uploading");
     setLogs([]);
 
-    // Load sample video for playback if mock mode and no video loaded
     if (mock && !draftVideo) {
       const setDraftVideo = useProjectStore.getState().setDraftVideo;
       setDraftVideo({
@@ -295,7 +299,7 @@ export default function ReviewPage({ params }: { params: Promise<{ projectId: st
     }
   }, [videoFile, draftConfig, draftVideo, setAnalysisStatus, readSSEStream]);
 
-  // No video uploaded - offer sample or upload
+  // No video uploaded
   if (!draftVideo) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -320,7 +324,7 @@ export default function ReviewPage({ params }: { params: Promise<{ projectId: st
     );
   }
 
-  // Analyzing state - show progress with log (importing_transcribe shows review UI with banner)
+  // Analyzing state
   if (analysisStatus !== "pending" && analysisStatus !== "completed" && analysisStatus !== "failed" && analysisStatus !== "importing_transcribe") {
     return (
       <div className="max-w-2xl mx-auto px-6 py-12">
@@ -378,7 +382,6 @@ export default function ReviewPage({ params }: { params: Promise<{ projectId: st
               レポート出力
             </Link>
           )}
-          {/* Log button */}
           {logs.length > 0 && (
             <button
               onClick={() => setLogModalOpen(true)}
@@ -390,7 +393,7 @@ export default function ReviewPage({ params }: { params: Promise<{ projectId: st
         </div>
       </header>
 
-      {/* 3-column resizable layout */}
+      {/* Main content: left sidebar + main area */}
       <div ref={containerRef} className="flex flex-1 min-h-0">
         {/* Left: Scene list */}
         <aside
@@ -403,11 +406,11 @@ export default function ReviewPage({ params }: { params: Promise<{ projectId: st
         {/* Left resize handle */}
         <div
           className="w-1 flex-shrink-0 cursor-col-resize bg-transparent hover:bg-blue-300 active:bg-blue-400 transition-colors"
-          onMouseDown={() => startDrag("left")}
+          onMouseDown={startLeftDrag}
         />
 
-        {/* Center: Video + Timeline + Scene Detail */}
-        <div ref={centerColumnRef} className="flex-1 flex flex-col min-w-0 min-h-0">
+        {/* Main area: video+issues top, text|speech bottom */}
+        <div ref={mainColumnRef} className="flex-1 flex flex-col min-w-0 min-h-0">
           {/* Pending prompt */}
           {analysisStatus === "pending" && scenes.length === 0 && (
             <div className="bg-blue-50 border-b border-blue-200 px-4 py-1.5 text-center flex-shrink-0">
@@ -423,12 +426,12 @@ export default function ReviewPage({ params }: { params: Promise<{ projectId: st
               <p className="text-purple-700 text-xs flex items-center justify-center gap-2">
                 <span className="inline-block w-2 h-2 bg-purple-500 rounded-full animate-pulse" />
                 {transcriptionProgress
-                  ? `Gemini文字起こし中... ${transcriptionProgress.completed}/${transcriptionProgress.total} シーン完了`
-                  : "Gemini高品質文字起こし中... 完了次第、音声データが自動更新されます"
+                  ? `Gemini文字起こし中... ${transcriptionProgress.completed}/${transcriptionProgress.total} シーン完了 (${Math.round(transcriptionProgress.completed / transcriptionProgress.total * 100)}%)`
+                  : "Gemini文字起こし準備中... チャンク切り出し後に開始されます"
                 }
               </p>
               {transcriptionProgress && (
-                <div className="mt-1 mx-auto max-w-xs h-1 bg-purple-200 rounded-full overflow-hidden">
+                <div className="mt-1 mx-auto max-w-xs h-1.5 bg-purple-200 rounded-full overflow-hidden">
                   <div
                     className="h-full bg-purple-500 rounded-full transition-all duration-500"
                     style={{ width: `${(transcriptionProgress.completed / transcriptionProgress.total * 100)}%` }}
@@ -438,98 +441,106 @@ export default function ReviewPage({ params }: { params: Promise<{ projectId: st
             </div>
           )}
 
-          {/* Video player - fixed height, no overflow */}
-          <div className="flex-shrink-0">
-            <VideoPlayer
-              ref={playerRef}
-              src={draftVideo.url}
-              onTimeUpdate={setCurrentTime}
-              height={videoHeight}
-              overlay={
-                overlayTypes.size > 0 ? (
-                  <VideoOverlay
-                    videoElement={playerRef.current?.getVideoElement() ?? null}
-                    currentTime={currentTime}
-                    scene={currentScene}
-                    enabledTypes={overlayTypes}
-                  />
-                ) : undefined
-              }
-            />
-          </div>
+          {/* TOP ROW: Video column + Issue panel */}
+          <div className="relative flex-shrink-0 flex min-w-0 border-b border-gray-200">
+            {/* Video column (fixed width, corner-resizable) */}
+            <div className="relative flex-shrink-0" style={{ width: videoWidth }}>
+              {/* Video player */}
+              <VideoPlayer
+                ref={playerRef}
+                src={draftVideo.url}
+                onTimeUpdate={setCurrentTime}
+                width={videoWidth}
+                height={videoHeight}
+                overlay={
+                  overlayTypes.size > 0 ? (
+                    <VideoOverlay
+                      videoElement={playerRef.current?.getVideoElement() ?? null}
+                      currentTime={currentTime}
+                      scene={currentScene}
+                      enabledTypes={overlayTypes}
+                    />
+                  ) : undefined
+                }
+              />
 
-          {/* Timeline + nav bar */}
-          <div className="flex-shrink-0 px-2 py-1 border-b border-gray-200 bg-white">
-            <VideoTimeline
-              duration={draftVideo.duration}
-              currentTime={currentTime}
-              onSeek={seekTo}
-            />
-            <div className="flex items-center gap-2">
-              <SceneNavigator />
-              <div className="ml-auto flex items-center gap-1.5">
-                {(Object.keys(DETECTION_TYPE_LABELS) as DetectionType[]).map((type) => {
-                  const enabled = overlayTypes.has(type);
-                  return (
-                    <label
-                      key={type}
-                      className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded cursor-pointer text-[10px] font-medium transition-colors select-none ${
-                        enabled
-                          ? "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                          : "bg-gray-50 text-gray-300 hover:bg-gray-100"
-                      }`}
-                    >
-                      <span className={`inline-block w-2 h-2 rounded-sm ${enabled ? DETECTION_TYPE_COLORS[type] : "bg-gray-300"}`} />
-                      <input
-                        type="checkbox"
-                        className="hidden"
-                        checked={enabled}
-                        onChange={() => {
-                          setOverlayTypes((prev) => {
-                            const next = new Set(prev);
-                            if (next.has(type)) next.delete(type);
-                            else next.add(type);
-                            return next;
-                          });
-                        }}
-                      />
-                      {DETECTION_TYPE_LABELS[type]}
-                    </label>
-                  );
-                })}
+              {/* Timeline + controls bar */}
+              <div className="px-2 py-1 bg-white border-t border-gray-100">
+                <VideoTimeline
+                  duration={draftVideo.duration}
+                  currentTime={currentTime}
+                  onSeek={seekTo}
+                />
+                <div className="flex items-center gap-1">
+                  <SceneNavigator />
+                  <div className="ml-auto flex items-center gap-0.5">
+                    {(Object.keys(DETECTION_TYPE_LABELS) as DetectionType[]).map((type) => {
+                      const enabled = overlayTypes.has(type);
+                      return (
+                        <button
+                          key={type}
+                          onClick={() => {
+                            setOverlayTypes((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(type)) next.delete(type);
+                              else next.add(type);
+                              return next;
+                            });
+                          }}
+                          className={`w-6 h-5 rounded text-[9px] font-bold transition-colors select-none flex items-center justify-center ${
+                            enabled
+                              ? "text-white " + DETECTION_TYPE_COLORS[type]
+                              : "bg-gray-100 text-gray-400 hover:bg-gray-200"
+                          }`}
+                          title={type}
+                        >
+                          {DETECTION_TYPE_LABELS[type]}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
+
+              {/* Corner resize handle (bottom-right triangle) */}
+              <div
+                onMouseDown={startCornerDrag}
+                className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize z-20"
+                style={{
+                  background: "linear-gradient(135deg, transparent 50%, #94a3b8 50%)",
+                }}
+              />
+            </div>
+
+            {/* Issue panel (absolute positioned, constrained to video column height) */}
+            <div
+              className="absolute top-0 bottom-0 right-0 border-l border-gray-200 bg-white overflow-y-auto p-3"
+              style={{ left: videoWidth }}
+            >
+              <IssueList onIssueClick={seekTo} currentScene={currentScene} />
             </div>
           </div>
 
-          {/* Vertical resize handle */}
-          <div
-            className="h-1 flex-shrink-0 cursor-row-resize bg-transparent hover:bg-blue-300 active:bg-blue-400 transition-colors"
-            onMouseDown={startVerticalDrag}
-          />
-
-          {/* Scene detail - fills remaining space */}
-          <div className="flex-1 min-h-0 bg-white">
-            <SceneDetailPanel
-              scene={currentScene}
-              currentTime={currentTime}
-              onTimestampClick={seekTo}
-            />
+          {/* BOTTOM ROW: Text | Speech side-by-side (full width) */}
+          <div className="flex-1 flex min-h-0">
+            {/* Left: Text (OCR + telop comparison) */}
+            <div className="w-1/2 border-r border-gray-200 bg-white overflow-hidden">
+              <TextPanel
+                scene={currentScene}
+                currentTime={currentTime}
+                onTimestampClick={seekTo}
+              />
+            </div>
+            {/* Right: Speech (transcription) */}
+            <div className="w-1/2 bg-white overflow-hidden">
+              <SpeechPanel
+                scene={currentScene}
+                currentTime={currentTime}
+                onTimestampClick={seekTo}
+              />
+            </div>
           </div>
         </div>
-
-        {/* Right resize handle */}
-        <div
-          className="w-1 flex-shrink-0 cursor-col-resize bg-transparent hover:bg-blue-300 active:bg-blue-400 transition-colors"
-          onMouseDown={() => startDrag("right")}
-        />
-
-        {/* Right: Issues panel */}
-        <aside
-          className="border-l border-gray-200 bg-white flex-shrink-0 overflow-y-auto p-3"
-          style={{ width: rightWidth }}
-        >
-          <IssueList onIssueClick={seekTo} />
-        </aside>
       </div>
 
       {/* Log modal overlay */}

@@ -96,10 +96,10 @@ export async function POST(request: NextRequest) {
             const chunkBuffers = await splitVideoIntoChunks(videoBuffer, chunkRanges);
             sendLog("success", `動画切り出し完了: ${chunkBuffers.map((b) => `${(b.length / 1024 / 1024).toFixed(1)}MB`).join(", ")}`);
 
-            // Transcribe all chunks in parallel
+            // Transcribe chunks with limited concurrency
             sendStatus("importing_transcribe");
-            const CONCURRENCY = chunks.length;
-            sendLog("info", `Gemini文字起こし開始: ${scenes.length}シーン → ${chunks.length}チャンク (全${CONCURRENCY}並列)`);
+            const CONCURRENCY = 3;
+            sendLog("info", `Gemini文字起こし開始: ${scenes.length}シーン → ${chunks.length}チャンク (${CONCURRENCY}並列)`);
             let completedScenes = 0;
 
             async function processChunk(chunk: ChunkSceneInput[], chunkIndex: number, chunkBuffer: Buffer) {
@@ -151,58 +151,61 @@ export async function POST(request: NextRequest) {
                 sendLog("info", `${label}: ${wordsInChunk}ワード (${completedScenes}/${scenes.length})`);
               } catch (err) {
                 const msg = err instanceof Error ? err.message : "不明なエラー";
-                if (msg.includes("429") || msg.includes("RESOURCE_EXHAUSTED")) {
-                  sendLog("warn", `${label}: レート制限 — 5秒待機してリトライ`);
-                  await new Promise((r) => setTimeout(r, 5000));
-                  try {
-                    const retry = await transcribeChunkWithGemini(chunkBuffer, chunk, chunkOffset, "ja");
-                    for (const sceneResult of retry.scenes) {
-                      const scene = scenes.find((s) => s.index === sceneResult.sceneIndex);
-                      if (!scene) continue;
+                const isRateLimit = msg.includes("429") || msg.includes("RESOURCE_EXHAUSTED");
 
-                      if (sceneResult.words.length > 0) {
-                        scene.geminiTranscription = {
-                          words: sceneResult.words.map((w) => ({
-                            word: w.word,
-                            startTimeSeconds: w.startSeconds,
-                            endTimeSeconds: w.endSeconds,
-                            confidence: 1.0,
-                            source: "gemini" as const,
-                          })),
-                          fullTranscript: sceneResult.fullTranscript,
-                          detectedLanguage: sceneResult.detectedLanguage,
-                          translatedTranscript: sceneResult.translatedTranscript,
-                          translatedWords: sceneResult.translatedWords.map((w) => ({
-                            word: w.word,
-                            startTimeSeconds: w.startSeconds,
-                            endTimeSeconds: w.endSeconds,
-                            confidence: 1.0,
-                            source: "gemini" as const,
-                          })),
-                        };
+                // Retry with exponential backoff (up to 3 attempts)
+                let retrySuccess = false;
+                if (isRateLimit) {
+                  const delays = [5000, 10000, 20000];
+                  for (let attempt = 0; attempt < delays.length; attempt++) {
+                    sendLog("warn", `${label}: レート制限 — ${delays[attempt] / 1000}秒待機してリトライ (${attempt + 1}/${delays.length})`);
+                    await new Promise((r) => setTimeout(r, delays[attempt]));
+                    try {
+                      const retry = await transcribeChunkWithGemini(chunkBuffer, chunk, chunkOffset, "ja");
+                      for (const sceneResult of retry.scenes) {
+                        const scene = scenes.find((s) => s.index === sceneResult.sceneIndex);
+                        if (!scene) continue;
+                        if (sceneResult.words.length > 0) {
+                          scene.geminiTranscription = {
+                            words: sceneResult.words.map((w) => ({
+                              word: w.word,
+                              startTimeSeconds: w.startSeconds,
+                              endTimeSeconds: w.endSeconds,
+                              confidence: 1.0,
+                              source: "gemini" as const,
+                            })),
+                            fullTranscript: sceneResult.fullTranscript,
+                            detectedLanguage: sceneResult.detectedLanguage,
+                            translatedTranscript: sceneResult.translatedTranscript,
+                            translatedWords: sceneResult.translatedWords.map((w) => ({
+                              word: w.word,
+                              startTimeSeconds: w.startSeconds,
+                              endTimeSeconds: w.endSeconds,
+                              confidence: 1.0,
+                              source: "gemini" as const,
+                            })),
+                          };
+                        }
+                        completedScenes++;
+                        sendEvent("transcription_scene", {
+                          sceneIndex: scene.index,
+                          geminiTranscription: scene.geminiTranscription || null,
+                          completedScenes,
+                          totalScenes: scenes.length,
+                        });
                       }
-
-                      completedScenes++;
-                      sendEvent("transcription_scene", {
-                        sceneIndex: scene.index,
-                        geminiTranscription: scene.geminiTranscription || null,
-                        completedScenes,
-                        totalScenes: scenes.length,
-                      });
+                      retrySuccess = true;
+                      const wordsInRetry = retry.scenes.reduce((sum, s) => sum + s.words.length, 0);
+                      sendLog("info", `${label}: リトライ成功 ${wordsInRetry}ワード`);
+                      break;
+                    } catch {
+                      // Continue to next retry attempt
                     }
-                  } catch {
-                    for (const input of chunk) {
-                      completedScenes++;
-                      sendEvent("transcription_scene", {
-                        sceneIndex: input.sceneIndex,
-                        geminiTranscription: null,
-                        completedScenes,
-                        totalScenes: scenes.length,
-                      });
-                    }
-                    sendLog("error", `${label}: リトライ失敗`);
                   }
-                } else {
+                }
+
+                if (!retrySuccess) {
+                  const sceneIds = chunk.map((c) => c.sceneIndex).join(", ");
                   for (const input of chunk) {
                     completedScenes++;
                     sendEvent("transcription_scene", {
@@ -212,7 +215,7 @@ export async function POST(request: NextRequest) {
                       totalScenes: scenes.length,
                     });
                   }
-                  sendLog("error", `${label}: ${msg}`);
+                  sendLog("error", `${label}: 失敗 (scenes: ${sceneIds}) — ${msg}`);
                 }
               }
             }
