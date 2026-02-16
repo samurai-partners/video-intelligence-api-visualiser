@@ -513,25 +513,25 @@ export default function ReviewPage({ params }: { params: Promise<{ projectId: st
               />
             </div>
 
-            {/* Current scene telop panel (right of video) */}
+            {/* Right panels: CurrentSceneTelop + AllSceneDashboard side by side */}
             <div
-              className="absolute top-0 bottom-0 right-0 border-l border-gray-200 bg-white overflow-y-auto p-3"
+              className="absolute top-0 bottom-0 right-0 flex border-l border-gray-200"
               style={{ left: videoWidth }}
             >
-              <CurrentSceneTelop currentScene={currentScene} />
+              <div className="w-1/2 border-r border-gray-200 bg-white overflow-y-auto p-3">
+                <CurrentSceneTelop currentScene={currentScene} />
+              </div>
+              <div className="w-1/2 bg-white overflow-hidden">
+                <AllSceneDashboard
+                  onSceneClick={(index) => {
+                    setCurrentSceneIndex(index);
+                    const scene = scenes[index];
+                    if (scene) seekTo(scene.startTimeSeconds);
+                  }}
+                  onIssueClick={seekTo}
+                />
+              </div>
             </div>
-          </div>
-
-          {/* MIDDLE ROW: All-scene dashboard */}
-          <div className="flex-shrink-0 border-b border-gray-200 bg-white" style={{ height: 180 }}>
-            <AllSceneDashboard
-              onSceneClick={(index) => {
-                setCurrentSceneIndex(index);
-                const scene = scenes[index];
-                if (scene) seekTo(scene.startTimeSeconds);
-              }}
-              onIssueClick={seekTo}
-            />
           </div>
 
           {/* BOTTOM ROW: Text | Speech side-by-side (full width) */}

@@ -28,12 +28,14 @@ export function CurrentSceneTelop({ currentScene }: CurrentSceneTelopProps) {
   const persistentTexts = useMemo(() => detectPersistentText(scenes), [scenes]);
   const unhiddenPersistent = persistentTexts.filter((t) => !hiddenTelops.has(t));
 
+  // Speech text for current scene (also displayed for debugging)
+  const speech = currentScene?.geminiTranscription?.fullTranscript || "";
+
   // Current scene telop matches
   const sceneMatches = useMemo(() => {
     if (!currentScene) return [];
     const dedupedTexts = deduplicateDetectedText(currentScene.viData.detectedText);
     if (dedupedTexts.length === 0) return [];
-    const speech = currentScene.geminiTranscription?.fullTranscript || "";
     return dedupedTexts
       .filter((dt) => !isHidden(dt.text))
       .map((dt) => {
@@ -124,6 +126,11 @@ export function CurrentSceneTelop({ currentScene }: CurrentSceneTelopProps) {
               全て&#x2713;
             </button>
           </div>
+          {speech && (
+            <p className="text-[9px] text-gray-300 truncate mb-1" title={speech}>
+              音声: {speech.slice(0, 50)}{speech.length > 50 ? "..." : ""}
+            </p>
+          )}
           <div className="space-y-1">
             {sceneMatches.map((match) => (
               <div

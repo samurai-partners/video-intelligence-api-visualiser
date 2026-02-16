@@ -69,13 +69,17 @@ function levenshteinDistance(a: string, b: string): number {
   return prev[aLen];
 }
 
-/** OCRノイズ判定: CJKを含まない短いテキストはノイズ */
+/** OCRノイズ判定: 短い断片的テキストはノイズとして除外 */
 function isOcrNoise(norm: string): boolean {
   if (norm.length === 0) return true;
-  const hasCJK = /[\u3000-\u9fff\uf900-\ufaff\uff00-\uffef]/.test(norm);
-  if (norm.length === 1) return !hasCJK;
-  if (norm.length === 2 && !hasCJK) return true;
-  return false;
+  // 漢字またはひらがなを含む → 意味のあるテロップの可能性が高い
+  const hasKanjiOrHiragana = /[\u4e00-\u9fff\u3040-\u309f]/.test(norm);
+  if (hasKanjiOrHiragana) return norm.length <= 1;
+  // カタカナのみ → 3文字以下はノイズ（ーナー、ヨン、ント、チー等）
+  const isKatakanaOnly = /^[\u30a0-\u30ff\u30fc]+$/.test(norm);
+  if (isKatakanaOnly) return norm.length <= 3;
+  // ASCII/数字/記号のみ → 5文字以下はノイズ（Carak、15m、Hala等）
+  return norm.length <= 5;
 }
 
 /**
