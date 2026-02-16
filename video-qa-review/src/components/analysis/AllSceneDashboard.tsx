@@ -55,7 +55,7 @@ export function AllSceneDashboard({ onSceneClick, onIssueClick }: AllSceneDashbo
         if (isHidden(dt.text)) continue;
         const key = `${s.index}-${dt.text}`;
         const override = telopOverrides.get(key);
-        const auto = compareTelopSpeech(dt.text, combined);
+        const auto = compareTelopSpeech(dt.text, combined, sSpeech);
         const result = override || auto;
         matches.push({
           key,

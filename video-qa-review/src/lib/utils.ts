@@ -26,8 +26,10 @@ export type MatchResult = "match" | "partial" | "mismatch";
 /** OCRアーティファクト除去用 */
 const OCR_ARTIFACTS = /[[\]\/\\|(){}「」『』【】〈〉（）<>.,!?;:'"・、。…\-_~^]/g;
 
-/** テロップと音声テキストを比較（OCRアーティファクト耐性あり） */
-export function compareTelopSpeech(telop: string, speech: string): MatchResult {
+/** テロップと音声テキストを比較（OCRアーティファクト耐性あり）
+ *  currentSpeech: 逆方向ファジーマッチ用の現シーン音声（combinedSpeechが長い場合に使用）
+ */
+export function compareTelopSpeech(telop: string, speech: string, currentSpeech?: string): MatchResult {
   let t = telop.replace(/[\s\u3000]/g, "").replace(OCR_ARTIFACTS, "");
   let s = speech.replace(/[\s\u3000]/g, "").replace(OCR_ARTIFACTS, "");
   if (!t || !s) return "mismatch";
@@ -41,6 +43,15 @@ export function compareTelopSpeech(telop: string, speech: string): MatchResult {
     const threshold = Math.ceil(t.length * 0.15);
     for (let i = 0; i <= s.length - t.length; i++) {
       if (levenshteinDistance(t, s.slice(i, i + t.length)) <= threshold) return "match";
+    }
+  }
+  // 逆方向: 音声がテロップの部分文字列か（OCR結合テロップ対策）
+  // combinedSpeechが渡されている場合はcurrentSpeech（現シーンのみ）で逆方向チェック
+  const rs = (currentSpeech || speech).replace(/[\s\u3000]/g, "").replace(OCR_ARTIFACTS, "");
+  if (rs.length <= t.length && rs.length >= 3) {
+    const threshold = Math.ceil(rs.length * 0.15);
+    for (let i = 0; i <= t.length - rs.length; i++) {
+      if (levenshteinDistance(rs, t.slice(i, i + rs.length)) <= threshold) return "match";
     }
   }
   // 文字重なり→partial

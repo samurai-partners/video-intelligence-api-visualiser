@@ -54,7 +54,7 @@ export function CurrentSceneTelop({ currentScene }: CurrentSceneTelopProps) {
       .map((dt) => {
         const key = `${currentScene.index}-${dt.text}`;
         const override = telopOverrides.get(key);
-        const auto = combinedSpeech ? compareTelopSpeech(dt.text, combinedSpeech) : ("mismatch" as MatchResult);
+        const auto = combinedSpeech ? compareTelopSpeech(dt.text, combinedSpeech, speech) : ("mismatch" as MatchResult);
         return {
           key,
           telopText: dt.text,
