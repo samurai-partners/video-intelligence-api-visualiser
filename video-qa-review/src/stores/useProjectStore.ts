@@ -4,6 +4,9 @@ import { create } from "zustand";
 import type { ProjectConfig, AnalysisStatus, TargetAudience } from "@/types/project";
 import type { Scene, GeminiTranscription } from "@/types/scene";
 import type { Issue } from "@/types/issue";
+import type { MatchResult } from "@/lib/utils";
+
+export type { MatchResult } from "@/lib/utils";
 
 interface DraftVideo {
   file: File | null;
@@ -12,8 +15,6 @@ interface DraftVideo {
   duration: number;
   size: number;
 }
-
-export type MatchResult = "match" | "partial" | "mismatch";
 
 interface ProjectState {
   // Draft (before analysis)
@@ -57,6 +58,7 @@ interface ProjectState {
   setHiddenTelop: (text: string) => void;
   clearHiddenTelop: (text: string) => void;
   bulkHideTelops: (texts: string[]) => void;
+  bulkSetTelopOverrides: (entries: Array<{ key: string; result: MatchResult }>) => void;
   updateIssueStatus: (issueId: string, status: Issue["status"]) => void;
   reset: () => void;
 }
@@ -141,6 +143,12 @@ export const useProjectStore = create<ProjectState>((set) => ({
       const next = new Set(state.hiddenTelops);
       for (const t of texts) next.add(t.replace(/[\s\u3000]/g, ""));
       return { hiddenTelops: next };
+    }),
+  bulkSetTelopOverrides: (entries) =>
+    set((state) => {
+      const next = new Map(state.telopOverrides);
+      for (const { key, result } of entries) next.set(key, result);
+      return { telopOverrides: next };
     }),
   updateIssueStatus: (issueId, status) =>
     set((state) => ({

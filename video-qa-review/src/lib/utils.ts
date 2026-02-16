@@ -19,6 +19,35 @@ export function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
+export type MatchResult = "match" | "partial" | "mismatch";
+
+/** OCRアーティファクト除去用 */
+const OCR_ARTIFACTS = /[[\]\/\\|(){}「」『』【】〈〉（）<>.,!?;:'"・、。…\-_~^]/g;
+
+/** テロップと音声テキストを比較（OCRアーティファクト耐性あり） */
+export function compareTelopSpeech(telop: string, speech: string): MatchResult {
+  let t = telop.replace(/[\s\u3000]/g, "").replace(OCR_ARTIFACTS, "");
+  let s = speech.replace(/[\s\u3000]/g, "").replace(OCR_ARTIFACTS, "");
+  if (!t || !s) return "mismatch";
+  // 完全一致 or 部分文字列
+  if (t === s || s.includes(t) || t.includes(s)) return "match";
+  // ファジーマッチ（全体）
+  const maxLen = Math.max(t.length, s.length);
+  if (levenshteinDistance(t, s) / maxLen < 0.15) return "match";
+  // ファジー部分文字列（テロップがスピーチに含まれるか）
+  if (t.length <= s.length && t.length >= 3) {
+    const threshold = Math.ceil(t.length * 0.15);
+    for (let i = 0; i <= s.length - t.length; i++) {
+      if (levenshteinDistance(t, s.slice(i, i + t.length)) <= threshold) return "match";
+    }
+  }
+  // 文字重なり→partial
+  const tChars = new Set([...t]);
+  const overlap = [...tChars].filter((c) => s.includes(c)).length;
+  if (overlap / tChars.size > 0.6) return "partial";
+  return "mismatch";
+}
+
 /** Levenshtein edit distance (O(min(a,b)) space) */
 function levenshteinDistance(a: string, b: string): number {
   if (a === b) return 0;

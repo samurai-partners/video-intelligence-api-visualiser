@@ -9,7 +9,8 @@ import { SceneNavigator } from "@/components/video/SceneNavigator";
 import { SceneSidebar } from "@/components/analysis/SceneSidebar";
 import { TextPanel } from "@/components/analysis/TextPanel";
 import { SpeechPanel } from "@/components/analysis/SpeechPanel";
-import { IssueList } from "@/components/analysis/IssueList";
+import { CurrentSceneTelop } from "@/components/analysis/CurrentSceneTelop";
+import { AllSceneDashboard } from "@/components/analysis/AllSceneDashboard";
 import { AnalysisProgress } from "@/components/analysis/AnalysisProgress";
 import { AnalysisLogPanel, type LogEntry } from "@/components/analysis/AnalysisLogPanel";
 import { VideoOverlay, type DetectionType } from "@/components/video/VideoOverlay";
@@ -441,7 +442,7 @@ export default function ReviewPage({ params }: { params: Promise<{ projectId: st
             </div>
           )}
 
-          {/* TOP ROW: Video column + Issue panel */}
+          {/* TOP ROW: Video column + CurrentSceneTelop */}
           <div className="relative flex-shrink-0 flex min-w-0 border-b border-gray-200">
             {/* Video column (fixed width, corner-resizable) */}
             <div className="relative flex-shrink-0" style={{ width: videoWidth }}>
@@ -512,18 +513,30 @@ export default function ReviewPage({ params }: { params: Promise<{ projectId: st
               />
             </div>
 
-            {/* Issue panel (absolute positioned, constrained to video column height) */}
+            {/* Current scene telop panel (right of video) */}
             <div
               className="absolute top-0 bottom-0 right-0 border-l border-gray-200 bg-white overflow-y-auto p-3"
               style={{ left: videoWidth }}
             >
-              <IssueList onIssueClick={seekTo} currentScene={currentScene} />
+              <CurrentSceneTelop currentScene={currentScene} />
             </div>
+          </div>
+
+          {/* MIDDLE ROW: All-scene dashboard */}
+          <div className="flex-shrink-0 border-b border-gray-200 bg-white" style={{ height: 180 }}>
+            <AllSceneDashboard
+              onSceneClick={(index) => {
+                setCurrentSceneIndex(index);
+                const scene = scenes[index];
+                if (scene) seekTo(scene.startTimeSeconds);
+              }}
+              onIssueClick={seekTo}
+            />
           </div>
 
           {/* BOTTOM ROW: Text | Speech side-by-side (full width) */}
           <div className="flex-1 flex min-h-0">
-            {/* Left: Text (OCR + telop comparison) */}
+            {/* Left: Text (OCR) */}
             <div className="w-1/2 border-r border-gray-200 bg-white overflow-hidden">
               <TextPanel
                 scene={currentScene}
