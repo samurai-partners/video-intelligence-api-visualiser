@@ -421,15 +421,12 @@ export default function ReviewPage({ params }: { params: Promise<{ projectId: st
             </div>
           )}
 
-          {/* Gemini transcription in progress banner */}
-          {analysisStatus === "importing_transcribe" && (
+          {/* Analysis progress banner (shows latest log message in real-time) */}
+          {!["pending", "completed", "failed"].includes(analysisStatus) && logs.length > 0 && (
             <div className="bg-purple-50 border-b border-purple-200 px-4 py-1.5 text-center flex-shrink-0">
               <p className="text-purple-700 text-xs flex items-center justify-center gap-2">
                 <span className="inline-block w-2 h-2 bg-purple-500 rounded-full animate-pulse" />
-                {transcriptionProgress
-                  ? `Gemini文字起こし中... ${transcriptionProgress.completed}/${transcriptionProgress.total} シーン完了 (${Math.round(transcriptionProgress.completed / transcriptionProgress.total * 100)}%)`
-                  : "Gemini文字起こし準備中... チャンク切り出し後に開始されます"
-                }
+                {logs[logs.length - 1].message}
               </p>
               {transcriptionProgress && (
                 <div className="mt-1 mx-auto max-w-xs h-1.5 bg-purple-200 rounded-full overflow-hidden">

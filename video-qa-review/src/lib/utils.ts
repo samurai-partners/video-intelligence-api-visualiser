@@ -1,3 +1,5 @@
+import type { TextFrame } from "@/types/scene";
+
 export function generateId(): string {
   return Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
 }
@@ -69,6 +71,18 @@ function levenshteinDistance(a: string, b: string): number {
   return prev[aLen];
 }
 
+/** テキストフレーム群の平均バウンディングボックス面積を計算（0〜1正規化） */
+function getAverageBboxArea(frames: TextFrame[]): number {
+  if (frames.length === 0) return 0;
+  let total = 0;
+  for (const f of frames) {
+    const xs = f.vertices.map((v) => v.x);
+    const ys = f.vertices.map((v) => v.y);
+    total += (Math.max(...xs) - Math.min(...xs)) * (Math.max(...ys) - Math.min(...ys));
+  }
+  return total / frames.length;
+}
+
 /** OCRノイズ判定: 短い断片的テキストはノイズとして除外 */
 function isOcrNoise(norm: string): boolean {
   if (norm.length === 0) return true;
@@ -91,14 +105,17 @@ function isOcrNoise(norm: string): boolean {
  * - 同一テキストの重複エントリは時間範囲をマージ
  */
 export function deduplicateDetectedText<
-  T extends { text: string; startTimeSeconds: number; endTimeSeconds: number; confidence: number; frames: unknown[] }
+  T extends { text: string; startTimeSeconds: number; endTimeSeconds: number; confidence: number; frames: TextFrame[] }
 >(texts: T[]): T[] {
   if (texts.length <= 1) return texts;
 
-  // Phase 1: filter noise
+  // Phase 1: filter noise (text length + bounding box area)
   const filtered = texts.filter((entry) => {
     const norm = entry.text.replace(/[\s\u3000]/g, "");
-    return !isOcrNoise(norm);
+    if (isOcrNoise(norm)) return false;
+    // VideoOverlayと同基準: bbox面積 < 0.5% は小さい背景文字
+    if (entry.frames.length > 0 && getAverageBboxArea(entry.frames) < 0.005) return false;
+    return true;
   });
   if (filtered.length === 0) return [];
 
