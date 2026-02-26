@@ -201,7 +201,8 @@ Return JSON in this exact format:
 
 Rules:
 - Return one entry per scene listed above, in the same order
-- Each scene's words must only contain speech that occurs within that scene's time range
+- Assign each word to the scene where its CENTER TIME falls: centerTime = (startSeconds + endSeconds) / 2
+- If a word spans two scenes, assign it to the scene containing the center of the word's duration
 - Transcribe in the ORIGINAL language as spoken
 - For Japanese, split into morphemes (意味のある最小単位, e.g. "今日は" "天気が" "いいですね")
 - For English and other space-separated languages, split by word
