@@ -89,8 +89,9 @@ export async function POST(request: NextRequest) {
             sendStatus("importing_upload");
             sendLog("info", `ffmpegで動画を${chunks.length}チャンクに切り出し中...`);
 
-            const chunkRanges = chunks.map((chunk) => ({
-              startSeconds: chunk[0].startTimeSeconds,
+            const CHUNK_OVERLAP_SECONDS = 5;
+            const chunkRanges = chunks.map((chunk, i) => ({
+              startSeconds: i === 0 ? chunk[0].startTimeSeconds : Math.max(0, chunk[0].startTimeSeconds - CHUNK_OVERLAP_SECONDS),
               endSeconds: chunk[chunk.length - 1].endTimeSeconds,
             }));
             const chunkBuffers = await splitVideoIntoChunks(videoBuffer, chunkRanges);
@@ -103,7 +104,8 @@ export async function POST(request: NextRequest) {
             let completedScenes = 0;
 
             async function processChunk(chunk: ChunkSceneInput[], chunkIndex: number, chunkBuffer: Buffer) {
-              const chunkOffset = chunk[0].startTimeSeconds;
+              // オーバーラップ込みの実際のffmpeg切り出し開始時間をオフセットとして使用
+              const chunkOffset = chunkRanges[chunkIndex].startSeconds;
               const chunkStart = chunk[0].startTimeSeconds.toFixed(1);
               const chunkEnd = chunk[chunk.length - 1].endTimeSeconds.toFixed(1);
               const label = `チャンク${chunkIndex + 1} (${chunkStart}s〜${chunkEnd}s, ${chunk.length}シーン, ${(chunkBuffer.length / 1024 / 1024).toFixed(1)}MB)`;
@@ -116,19 +118,27 @@ export async function POST(request: NextRequest) {
                   const scene = scenes.find((s) => s.index === sceneResult.sceneIndex);
                   if (!scene) continue;
 
-                  if (sceneResult.words.length > 0) {
+                  // シーン範囲内のwordのみ採用（オーバーラップ由来の範囲外wordを除外）
+                  const filteredWords = sceneResult.words.filter(
+                    (w) => w.startSeconds >= scene.startTimeSeconds - 0.5 && w.startSeconds < scene.endTimeSeconds + 0.5
+                  );
+                  const filteredTranslatedWords = sceneResult.translatedWords.filter(
+                    (w) => w.startSeconds >= scene.startTimeSeconds - 0.5 && w.startSeconds < scene.endTimeSeconds + 0.5
+                  );
+
+                  if (filteredWords.length > 0) {
                     scene.geminiTranscription = {
-                      words: sceneResult.words.map((w) => ({
+                      words: filteredWords.map((w) => ({
                         word: w.word,
                         startTimeSeconds: w.startSeconds,
                         endTimeSeconds: w.endSeconds,
                         confidence: 1.0,
                         source: "gemini" as const,
                       })),
-                      fullTranscript: sceneResult.fullTranscript,
+                      fullTranscript: filteredWords.map((w) => w.word).join(""),
                       detectedLanguage: sceneResult.detectedLanguage,
-                      translatedTranscript: sceneResult.translatedTranscript,
-                      translatedWords: sceneResult.translatedWords.map((w) => ({
+                      translatedTranscript: filteredTranslatedWords.map((w) => w.word).join(""),
+                      translatedWords: filteredTranslatedWords.map((w) => ({
                         word: w.word,
                         startTimeSeconds: w.startSeconds,
                         endTimeSeconds: w.endSeconds,
@@ -165,19 +175,25 @@ export async function POST(request: NextRequest) {
                       for (const sceneResult of retry.scenes) {
                         const scene = scenes.find((s) => s.index === sceneResult.sceneIndex);
                         if (!scene) continue;
-                        if (sceneResult.words.length > 0) {
+                        const rFilteredWords = sceneResult.words.filter(
+                          (w) => w.startSeconds >= scene.startTimeSeconds - 0.5 && w.startSeconds < scene.endTimeSeconds + 0.5
+                        );
+                        const rFilteredTranslatedWords = sceneResult.translatedWords.filter(
+                          (w) => w.startSeconds >= scene.startTimeSeconds - 0.5 && w.startSeconds < scene.endTimeSeconds + 0.5
+                        );
+                        if (rFilteredWords.length > 0) {
                           scene.geminiTranscription = {
-                            words: sceneResult.words.map((w) => ({
+                            words: rFilteredWords.map((w) => ({
                               word: w.word,
                               startTimeSeconds: w.startSeconds,
                               endTimeSeconds: w.endSeconds,
                               confidence: 1.0,
                               source: "gemini" as const,
                             })),
-                            fullTranscript: sceneResult.fullTranscript,
+                            fullTranscript: rFilteredWords.map((w) => w.word).join(""),
                             detectedLanguage: sceneResult.detectedLanguage,
-                            translatedTranscript: sceneResult.translatedTranscript,
-                            translatedWords: sceneResult.translatedWords.map((w) => ({
+                            translatedTranscript: rFilteredTranslatedWords.map((w) => w.word).join(""),
+                            translatedWords: rFilteredTranslatedWords.map((w) => ({
                               word: w.word,
                               startTimeSeconds: w.startSeconds,
                               endTimeSeconds: w.endSeconds,

@@ -26,12 +26,50 @@ export type MatchResult = "match" | "partial" | "mismatch";
 /** OCRアーティファクト除去用 */
 const OCR_ARTIFACTS = /[[\]\/\\|(){}「」『』【】〈〉（）<>.,!?;:'"・、。…\-_~^]/g;
 
+/** 形式名詞・副詞など、漢字/ひらがな表記揺れが頻出する語の正規化マップ（漢字→ひらがな） */
+const KANJI_KANA_NORMALIZE: [RegExp, string][] = [
+  [/方/g, "ほう"],
+  [/事/g, "こと"],
+  [/物/g, "もの"],
+  [/所/g, "ところ"],
+  [/時/g, "とき"],
+  [/為/g, "ため"],
+  [/訳/g, "わけ"],
+  [/筈/g, "はず"],
+  [/迄/g, "まで"],
+  [/位/g, "くらい"],
+  [/程/g, "ほど"],
+  [/様/g, "よう"],
+  [/通り/g, "とおり"],
+  [/達/g, "たち"],
+  [/等/g, "など"],
+  [/丁度/g, "ちょうど"],
+  [/沢山/g, "たくさん"],
+  [/流石/g, "さすが"],
+  [/勿論/g, "もちろん"],
+  [/何故/g, "なぜ"],
+  [/如何/g, "いかが"],
+  [/頂/g, "いただ"],
+  [/下さ/g, "くださ"],
+  [/致し/g, "いたし"],
+  [/御/g, "お"],
+];
+
+/** 漢字→ひらがな表記揺れを正規化 */
+function normalizeKanjiKana(text: string): string {
+  let result = text;
+  for (const [pattern, replacement] of KANJI_KANA_NORMALIZE) {
+    result = result.replace(pattern, replacement);
+  }
+  return result;
+}
+
 /** テロップと音声テキストを比較（OCRアーティファクト耐性あり）
  *  currentSpeech: 逆方向ファジーマッチ用の現シーン音声（combinedSpeechが長い場合に使用）
  */
 export function compareTelopSpeech(telop: string, speech: string, currentSpeech?: string): MatchResult {
-  let t = telop.replace(/[\s\u3000]/g, "").replace(OCR_ARTIFACTS, "");
-  let s = speech.replace(/[\s\u3000]/g, "").replace(OCR_ARTIFACTS, "");
+  let t = normalizeKanjiKana(telop.replace(/[\s\u3000]/g, "").replace(OCR_ARTIFACTS, ""));
+  let s = normalizeKanjiKana(speech.replace(/[\s\u3000]/g, "").replace(OCR_ARTIFACTS, ""));
   if (!t || !s) return "mismatch";
   // 完全一致 or 部分文字列
   if (t === s || s.includes(t) || t.includes(s)) return "match";
@@ -47,7 +85,7 @@ export function compareTelopSpeech(telop: string, speech: string, currentSpeech?
   }
   // 逆方向: 音声がテロップの部分文字列か（OCR結合テロップ対策）
   // combinedSpeechが渡されている場合はcurrentSpeech（現シーンのみ）で逆方向チェック
-  const rs = (currentSpeech || speech).replace(/[\s\u3000]/g, "").replace(OCR_ARTIFACTS, "");
+  const rs = normalizeKanjiKana((currentSpeech || speech).replace(/[\s\u3000]/g, "").replace(OCR_ARTIFACTS, ""));
   if (rs.length <= t.length && rs.length >= 3) {
     const threshold = Math.ceil(rs.length * 0.15);
     for (let i = 0; i <= t.length - rs.length; i++) {
