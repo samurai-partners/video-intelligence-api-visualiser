@@ -32,17 +32,17 @@ export function CurrentSceneTelop({ currentScene }: CurrentSceneTelopProps) {
   // Speech text for current scene (also displayed for debugging)
   const speech = currentScene?.geminiTranscription?.fullTranscript || "";
 
-  // 前後シーンの音声も結合して照合（タイムスタンプズレ対策）
+  // 前後3シーンの音声を結合して照合（タイムスタンプズレ対策）
   const combinedSpeech = useMemo(() => {
     if (!currentScene) return "";
-    const prev = currentScene.index > 0 ? scenes[currentScene.index - 1] : null;
-    const next = currentScene.index < scenes.length - 1 ? scenes[currentScene.index + 1] : null;
-    return [
-      prev?.geminiTranscription?.fullTranscript || "",
-      speech,
-      next?.geminiTranscription?.fullTranscript || "",
-    ].join("");
-  }, [currentScene, scenes, speech]);
+    const idx = currentScene.index;
+    const RANGE = 3; // 前後3シーン
+    const parts: string[] = [];
+    for (let i = Math.max(0, idx - RANGE); i <= Math.min(scenes.length - 1, idx + RANGE); i++) {
+      parts.push(scenes[i]?.geminiTranscription?.fullTranscript || "");
+    }
+    return parts.join("");
+  }, [currentScene, scenes]);
 
   // Current scene telop matches
   const sceneMatches = useMemo(() => {

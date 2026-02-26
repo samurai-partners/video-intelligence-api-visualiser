@@ -257,22 +257,84 @@ export async function POST(request: NextRequest) {
             // 最頻出の検出言語
             const mainLanguage = [...detectedLanguages.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || "unknown";
 
-            // シーンに割り当て & イベント送信
+            // --- ハイブリッドアライメント: GeminiテキストにVI APIタイムスタンプをマッピング ---
+            // 文字単位の累積位置でGemini wordをVI API wordのタイムスタンプに揃える
+            function alignGeminiWithVI(
+              geminiWords: WordPoolEntry[],
+              viWords: Array<{ word: string; startTimeSeconds: number; endTimeSeconds: number }>,
+            ): WordPoolEntry[] {
+              if (viWords.length === 0) return geminiWords; // VI API音声なし→Geminiそのまま
+              if (geminiWords.length === 0) return [];
+
+              // VI APIのテキストを文字単位のタイムライン化
+              // 各文字にVI APIのタイムスタンプを線形補間で割り当て
+              const viCharTimestamps: Array<{ char: string; time: number }> = [];
+              for (const vw of viWords) {
+                const chars = [...vw.word];
+                const duration = vw.endTimeSeconds - vw.startTimeSeconds;
+                for (let ci = 0; ci < chars.length; ci++) {
+                  viCharTimestamps.push({
+                    char: chars[ci],
+                    time: vw.startTimeSeconds + (duration * ci) / Math.max(chars.length, 1),
+                  });
+                }
+              }
+              if (viCharTimestamps.length === 0) return geminiWords;
+
+              // Geminiの各wordに対して、文字の累積位置でVI APIのタイムスタンプをマッピング
+              const geminiText = geminiWords.map((w) => w.word).join("");
+              const viText = viCharTimestamps.map((c) => c.char).join("");
+
+              // 文字列が大きく異なる（言語違いなど）→ アライメント不可、Geminiそのまま
+              if (geminiText.length === 0 || viText.length === 0) return geminiWords;
+
+              // 各Gemini wordに対してVI APIタイムラインから開始/終了時刻を取得
+              const result: WordPoolEntry[] = [];
+              let geminiCharPos = 0;
+
+              for (const gw of geminiWords) {
+                const wordLen = [...gw.word].length;
+                // Geminiの文字位置をVI APIの文字位置に比例マッピング
+                const viStartIdx = Math.round((geminiCharPos / Math.max(geminiText.length, 1)) * viCharTimestamps.length);
+                const viEndIdx = Math.round(((geminiCharPos + wordLen) / Math.max(geminiText.length, 1)) * viCharTimestamps.length);
+
+                const clampedStart = Math.min(Math.max(viStartIdx, 0), viCharTimestamps.length - 1);
+                const clampedEnd = Math.min(Math.max(viEndIdx - 1, 0), viCharTimestamps.length - 1);
+
+                result.push({
+                  ...gw,
+                  startSeconds: viCharTimestamps[clampedStart].time,
+                  endSeconds: viCharTimestamps[clampedEnd].time + 0.1, // 最低0.1秒の幅
+                });
+
+                geminiCharPos += wordLen;
+              }
+
+              return result;
+            }
+
+            // シーンに割り当て & ハイブリッドアライメント適用 & イベント送信
             for (let i = 0; i < scenes.length; i++) {
               const scene = scenes[i];
-              const words = sceneWords.get(i) || [];
+              const geminiWordsRaw = sceneWords.get(i) || [];
               const translated = sceneTranslatedWords.get(i) || [];
 
-              if (words.length > 0) {
+              // VI APIのword（このシーンに割り当て済み）
+              const viWordsForScene = scene.viData.speechTranscription || [];
+
+              // ハイブリッド: GeminiテキストにVI APIタイムスタンプを適用
+              const alignedWords = alignGeminiWithVI(geminiWordsRaw, viWordsForScene);
+
+              if (alignedWords.length > 0) {
                 scene.geminiTranscription = {
-                  words: words.map((w) => ({
+                  words: alignedWords.map((w) => ({
                     word: w.word,
                     startTimeSeconds: w.startSeconds,
                     endTimeSeconds: w.endSeconds,
                     confidence: 1.0,
                     source: "gemini" as const,
                   })),
-                  fullTranscript: words.map((w) => w.word).join(""),
+                  fullTranscript: alignedWords.map((w) => w.word).join(""),
                   detectedLanguage: mainLanguage,
                   translatedTranscript: translated.map((w) => w.word).join(""),
                   translatedWords: translated.map((w) => ({

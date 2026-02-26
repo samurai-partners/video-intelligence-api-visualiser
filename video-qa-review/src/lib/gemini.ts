@@ -294,7 +294,7 @@ function parseChunkTranscriptionResponse(text: string, chunkScenes: ChunkSceneIn
  * チャンクの長さはバラバラでOK — 処理速度のための分割であり、
  * 正確な秒数で切る必要はない。
  */
-export function createTimeChunks(scenes: ChunkSceneInput[], targetSeconds: number = 120): ChunkSceneInput[][] {
+export function createTimeChunks(scenes: ChunkSceneInput[], targetSeconds: number = 60): ChunkSceneInput[][] {
   const chunks: ChunkSceneInput[][] = [];
   let currentChunk: ChunkSceneInput[] = [];
   let chunkStartTime = 0;

@@ -47,10 +47,13 @@ export function AllSceneDashboard({ onSceneClick, onIssueClick }: AllSceneDashbo
       if (s.viData.detectedText.length === 0) continue;
       const sSpeech = s.geminiTranscription?.fullTranscript || "";
       if (!sSpeech) continue;
-      // 前後シーンの音声も結合（タイムスタンプズレ対策）
-      const prev = si > 0 ? scenes[si - 1]?.geminiTranscription?.fullTranscript || "" : "";
-      const next = si < scenes.length - 1 ? scenes[si + 1]?.geminiTranscription?.fullTranscript || "" : "";
-      const combined = prev + sSpeech + next;
+      // 前後3シーンの音声を結合（タイムスタンプズレ対策）
+      const RANGE = 3;
+      const combinedParts: string[] = [];
+      for (let ri = Math.max(0, si - RANGE); ri <= Math.min(scenes.length - 1, si + RANGE); ri++) {
+        combinedParts.push(scenes[ri]?.geminiTranscription?.fullTranscript || "");
+      }
+      const combined = combinedParts.join("");
       const deduped = deduplicateDetectedText(s.viData.detectedText, bboxThreshold);
       for (const dt of deduped) {
         if (isHidden(dt.text)) continue;

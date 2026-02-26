@@ -289,12 +289,12 @@ export function segmentIntoScenes(viResult: VIRawResult, videoDuration: number):
       }
     }
 
-    // Collect speech words for this scene
+    // Collect speech words for this scene (center-time based assignment)
     const speechWords: SpeechWord[] = [];
-    let fullTranscript = "";
     for (const st of viResult.speechTranscriptions) {
       for (const w of st.words) {
-        if (w.startSeconds >= start && w.startSeconds < end) {
+        const centerTime = (w.startSeconds + w.endSeconds) / 2;
+        if (centerTime >= start && centerTime < end) {
           speechWords.push({
             word: w.word,
             startTimeSeconds: w.startSeconds,
@@ -303,12 +303,8 @@ export function segmentIntoScenes(viResult: VIRawResult, videoDuration: number):
           });
         }
       }
-      // Build transcript for this scene
-      const sceneWords = st.words.filter((w) => w.startSeconds >= start && w.startSeconds < end);
-      if (sceneWords.length > 0) {
-        fullTranscript += sceneWords.map((w) => w.word).join("") + " ";
-      }
     }
+    const fullTranscript = speechWords.map((w) => w.word).join("");
 
     // Collect labels that overlap with this scene
     const sceneLabels: SceneLabel[] = [];
